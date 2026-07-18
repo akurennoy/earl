@@ -1,20 +1,24 @@
-%<TODO: 
-% OVERALL GUIDANCE:
-% Role: you are an experienced researcher highly skilled at writing scientific papers (on the topics of experimental design and statistical methods). Your papers combine mathematical rigour with clarity and appeal to large audiences of interdisciplinary readers.
-% Context: you are given a confidential tex draft of a paper below. Your task will be to complete the items marked with <TODO: ...>.
-% Style: maintain the style of the text/proofs/notation that already exist in the draft; use British spelling; format using the WSDM template
-% Other: to track the changes made to the draft and having the ability to revert some of them - create a **private** git repository in https://github.com/akurennoy and put the draft in there.
-%>
+%% WSDM submission format (ACM sigconf). For double-blind review builds use:
+%%   \documentclass[sigconf,review,anonymous]{acmart}
+\documentclass[sigconf]{acmart}
 
+\usepackage{tikz}
+\usepackage{booktabs}
+\usepackage{graphicx}
 
-\documentclass{article}
-\usepackage{amsmath, amsthm}
-\usepackage{enumitem}
+%% Placeholder conference block -- update once the target WSDM cycle is fixed.
+\setcopyright{none}
+\acmConference[WSDM '27]{Proceedings of the 20th ACM International Conference on Web Search and Data Mining}{February 2027}{}
+\acmYear{2027}
+\settopmatter{printacmref=false}
 
-\newtheorem{example}{Example}
-\newtheorem{lemma}{Lemma}
 \newtheorem{remark}{Remark}
-\newtheorem{theorem}{Theorem}
+\newtheorem{assumptionx}{A}
+\newcounter{assumption}
+\newenvironment{assumption}{\refstepcounter{assumption}\par\medskip\noindent\textbf{A\theassumption.}\enspace}{\par\medskip}
+\newenvironment{assumptionstar}[1]{\par\medskip\noindent\textbf{#1.}\enspace}{\par\medskip}
+
+\setlength{\emergencystretch}{3em}
 
 \newcommand{\E}{\mathrm E}
 \newcommand{\iidsiminline}{{\scriptstyle\stackrel{\mathrm{iid}}{\sim}}}
@@ -25,675 +29,792 @@
 \DeclareMathOperator{\var}{var}
 \DeclareMathOperator{\cov}{cov}
 
-
+\begin{document}
 
 \title{EARL: Exposure- and Allocation-Reweighted Linear Estimator for Bipartite Experiments with Partial Assignment}
+
 \author{Alexey Kurennoy}
-\date{April 2026}
+\affiliation{%
+  \institution{}%% NOTE: affiliation intentionally left blank in the working draft
+  \city{}
+  \country{}
+}
+\email{}
 
+\begin{abstract}
+Bipartite A/B tests are experiments in which treatment is randomised over one set of units, while outcomes are measured on a different set. For example, an online marketplace may test a new pricing algorithm by switching it on for a random subset of \emph{items}, while the outcome of interest---say, purchase satisfaction---is measured on \emph{customers}, each of whom interacts with many items.
 
-\begin{document}
+Most existing analyses of bipartite experiments assume that every randomisation (also known as diversion) unit is assigned to either treatment or control. In practice, however, it is common that only a subset of these units participates in the experiment: platforms cap rollout risk, reserve holdout groups, and split their unit population across many concurrent tests. Ignoring the unassigned units biases estimation, while including them requires care.
+
+In this paper, we construct an unbiased linear estimator for bipartite experiments with partial assignment. We show that in the presence of unassigned units, one needs to re-weight observations not only by the (centred) share of treated connections among the participating ones (i.e., the exposure) but also by the inverse probability of participation, so that units whose connections are well covered by the experiment carry proportionally more weight. We prove that the resulting estimator, which we call EARL (Exposure- and Allocation-Reweighted Linear), is unbiased, consistent, and asymptotically normal, we derive two asymptotic variance estimators for it, and we show that it has minimal variance in a natural class of linear estimators. An important practical feature of EARL is that it remains unbiased \emph{regardless of the experience received by the unassigned units}, meaning, for example, that they can be freely allocated to other, non-overlapping tests. Our theoretical results are complemented with a simulation study on two public datasets, in which EARL attains up to six times lower error than the strongest existing baseline, and over an order of magnitude lower than Horvitz--Thompson-style alternatives.
+\end{abstract}
+
+\begin{CCSXML}
+<ccs2012>
+ <concept>
+  <concept_id>10002950.10003648.10003662</concept_id>
+  <concept_desc>Mathematics of computing~Probabilistic inference problems</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10002944.10011122.10002945</concept_id>
+  <concept_desc>General and reference~Experimentation</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+</ccs2012>
+\end{CCSXML}
+\ccsdesc[500]{Mathematics of computing~Probabilistic inference problems}
+\ccsdesc[500]{General and reference~Experimentation}
+
+\keywords{A/B testing, bipartite experiments, interference, average treatment effect, partial assignment}
 
 \maketitle
 
-\begin{abstract}
-Bi-partite A/B tests are experiments in which treatment is randomised over one set of units, while outcomes are measured on a different set. For example, a platform may randomise content creators to receive a new recommendation algorithm, while measuring engagement outcomes among viewers who interact with that content. %<TODO: replace with a better, clearer example>
+\section{Introduction}\label{sec:introduction}
 
-Most existing analyses of bi-partite experiments assume that all randomisation (aka diversion) units are assigned to either treatment or control. In practice, however, it is often that only a subset of these units participates in the experiment. Ignoring the unassigned units leads to estimation bias.
+Online platforms routinely evaluate changes through randomised experiments (A/B tests). The textbook design randomises the same units on which outcomes are measured. In many important applications, however, the intervention is applied to one population while its effects materialise on another. A marketplace changes the pricing mechanism of \emph{items}, but cares about the satisfaction of \emph{customers} who interact with those items; an advertising platform modifies the auction configuration of \emph{ad campaigns}, but measures the experience of \emph{users} exposed to many campaigns; a video service alters the encoding of \emph{titles}, but tracks the engagement of \emph{viewers}. Experiments of this kind are called \emph{bipartite}: one set of units---called \emph{randomisation} or \emph{diversion} units---is randomly split between treatment and control, while outcomes are recorded on a different set of \emph{analysis} (or \emph{outcome}) units, and the two sets are connected by a bipartite \emph{experiment graph} \cite{zigler2021bipartite,harshaw2023erl,doudchenko2020causal}. Because each analysis unit is typically connected to many randomisation units, its outcome depends on the whole profile of treatments among its connections; this cross-unit dependence, known as interference, invalidates the naive difference-in-means analysis and calls for dedicated estimators.
 
-In this paper, we construct an unbiased, ERL-type estimator for bi-partite experiments with partial assignment. We show that in the presence of unassigned units, one needs to re-weight observations by not only the percentage of connections in treatment (i.e., the exposure) but also by the percentage of connections participating in the experiment (i.e., the coverage or allocation). An important practical feature of the proposed estimator is that it remains unbiased regardless of the experience received by the unassigned units, meaning, for example, that they can be freely allocated to other, non-overlapping tests. Our theoretical results are complemented with an extensive simulation study that demonstrates superior performance of the proposed estimator over existing alternatives.
-f
-\end{abstract}
+Existing analyses of bipartite experiments almost universally presume that \emph{every} randomisation unit is assigned to either treatment or control. Industrial reality is different: usually only a subset of randomisation units participates in any given experiment. There are at least three reasons. First, platforms limit the blast radius of risky changes by enrolling only a fraction (say, 20\%) of units. Second, they run dozens or hundreds of concurrent experiments and divide the population of randomisation units between them, so that any single test only ``owns'' a slice of the population. Third, holdout groups are often reserved for long-term measurement. In all these cases, the units left out of the experiment---we call them \emph{unassigned} or \emph{unallocated}---do not disappear: they remain connected to the analysis units through the experiment graph and keep influencing the measured outcomes. A customer's satisfaction depends on all items they interact with, not only on the items enrolled in our pricing test.
 
-\section{Introduction}
+It is tempting to analyse such an experiment by simply deleting the unassigned units from the graph and applying a standard estimator to the reduced graph. This, however, produces a systematically \emph{biased} answer. The estimand of interest is the \emph{global average treatment effect} (GATE)---the change in average outcomes if the treatment were rolled out to \emph{all} randomisation units, compared with none. An estimator computed on the reduced graph does not ``know'' that each analysis unit has further, currently unassigned connections that will also switch to the treatment experience after the rollout; as we show in Section~\ref{subsec:estimator}, the exposure-reweighted linear (ERL) estimator of \citet{harshaw2023erl} applied to the reduced graph converges to $q\cdot GATE$, where $q$ is the participation rate---an attenuation of up to 90\% at realistic allocation rates. The problem is a special case of estimation under a misspecified interference graph, which is known to introduce bias that grows with the divergence between the assumed and true graphs \cite{weinstein2026causal,savje2024misspecified}. Inverse-probability-weighting (IPW) estimators, on the other hand, can be adapted to remain unbiased, but their variance grows exponentially in the number of connections and deteriorates further under partial assignment, because the probability of observing an extreme exposure shrinks geometrically with the participation rate.
 
-%<TODO: describe the bi-partite experiment setting, introduce terminology (two types of units, the way they are named in the literature, the way we will be referring to those two types in the paper), give relevant examples>
-%<TODO: explain why not all of the randomisation units may be assigned to analysis units while still connected to some of the analysis units in the experiment graph, give intuituion as to why we cannot simply ignore them in experiment analysis> 
-
-In this paper, we show that for unbiased estimation of the treatment effect under partial assignment, one has to weight the observations not only by the exposures of the respective analysis units but also by the participation rate among the randomisation units that they are assigned to. We provide the exact recipe of how this reweighting should be done, which leads to a novel ERL-type estimator for bi-partite experiments with partial assignment which we call the EARL (Exposure- and Allocation-Reweighted Linear) estimator. We prove its unbiasedness, consistency, and asymptotic normality and devise estimators of its asymptotic variance, which gives a complete machinery for performing inference based on the proposed estimator.
+In this paper, we show that for unbiased and practical estimation of the treatment effect under partial assignment, one has to weight the observations not only by the (centred) exposure of the respective analysis units but also by the inverse of the participation rate of the randomisation units they are connected to, thereby tilting the estimator towards analysis units whose connections are well covered by the experiment. We provide the exact recipe for this reweighting, which leads to a novel ERL-type estimator for bipartite experiments with partial assignment that we call the EARL (Exposure- and Allocation-Reweighted Linear) estimator. We prove its unbiasedness, consistency, and asymptotic normality, and devise estimators of its asymptotic variance, which together give a complete machinery for performing inference. We further prove that EARL has the smallest variance in a natural class of linear reweighting estimators, uniformly over the outcome models we consider.
 
 The contributions of this paper are as follows.
 \begin{itemize}
-    \item \textbf{Propose a novel unbiased estimator for bi-partite experiments with partial assignment}. We construct a novel ERL-type estimator that is unbiased under partial assignment. We prove its unbiasedness, consistency, and asymptotic normality and show how to perform inference using this estimator.
-    \item \textbf{Demonstrate the superiority of the proposed estimator in semi-synthetic experiments} %<TODO: phrase more appropriately after the experiments have been conducted>
-\end{itemize} 
+    \item \textbf{A novel unbiased estimator for bipartite experiments with partial assignment.} We construct an ERL-type estimator that is unbiased under partial assignment, remains unbiased \emph{whatever experience the unassigned units receive} (e.g., they may participate in other, non-overlapping experiments), reduces to the standard ERL estimator when everyone is assigned, and is provably the minimum-variance member of a natural class of linear estimators. We establish a bias bound without any linearity assumptions, and exact unbiasedness, consistency, and asymptotic normality under a linear-contributions model.
+    \item \textbf{Inference machinery with corrected theory.} We derive a closed-form, exactly unbiased estimator of EARL's variance in the spirit of \citet{harshaw2023erl}, and analyse the randomisation-inference variance estimator of \citet{shi2025scalableanalysisbipartiteexperiments} under partial assignment. For the latter, we identify a subtlety specific to partial assignment: validity requires a null hypothesis stating that expected outcomes are unaffected by \emph{allocation} as well as assignment; we supply a corrected proof under this null (the validity argument in the cited work was found to be flawed and has been withdrawn by its authors).
+    \item \textbf{A reproducible semi-synthetic evaluation.} Following the experimental designs of \citet{doudchenko2020causal} and \citet{harshaw2023erl}, we benchmark EARL on a synthetic graph and on two public bipartite graphs (Amazon product reviews and MovieLens), varying the participation rate from 10\% to 100\%. EARL is unbiased in all linear-response scenarios and reduces the estimation error of the strongest baseline by up to a factor of six---and that of Horvitz--Thompson alternatives by an order of magnitude or more---while we also map out, and explain, the low-allocation regime in which the biased reduced-graph estimator retains a lower total error.
+\end{itemize}
 
-%<TODO: polish this paragraph and make sure it is consistent with the actual paper structure>
-The paper is structured as follows. We begin with a review of related literature in Section~\ref{sec:literature}. Section~\ref{subsec:notation} describes our setting and introduces notation. In Section~\ref{subsec:estimator}, we propose a novel ERL-type estimator for bi-partite experiments with partial assignment. Then in Section~\ref{subsec:assumptions} we state and discuss our assumptions. We proceed with presenting unbiasedness and consistency theorems in Section~\ref{subsec:analysis}. In Section~\ref{subsec:inference} we discuss how to perform inference with the proposed estimator. Section~\ref{sec:simulations} reports the results of simulation experiments. Section~\ref{sec:conclusion} concludes. Proofs of the formal statements can be found in Appendix.
+The paper is structured as follows. Section~\ref{sec:literature} reviews related work. Section~\ref{subsec:notation} describes our setting and introduces notation. Section~\ref{subsec:estimator} introduces the EARL estimator, illustrates on a worked example why reduced-graph estimation is biased, and states the optimality result. Section~\ref{subsec:analysis} presents our assumptions together with the unbiasedness and consistency theorems. Section~\ref{subsec:inference} develops inference: asymptotic normality and two asymptotic-variance estimators. Section~\ref{sec:simulations} reports the simulation study. Section~\ref{sec:conclusion} concludes. All proofs are collected in the Appendix.
 
 \section{Related Literature}\label{sec:literature}
 
-%<TODO: write a concise but holistic review of the relevant literature that woulc clearly show how this paper fits the existing research landscape and what gaps it fills. Here is some additional guidance:
-% - Categorise the existing methods into IPW and ERL-type. Briefly explain what the core idea of each approach is.
-% - Compare with https://arxiv.org/abs/2511.11564 in more detail.
-% - Highlight why the application of existing methods to bi-partite expeirments with partial assignment is problematic: dropping the unassigned connections and running the standard ERL leads to a bias (reference an example further below in the paper and ideally the "Causal Inference under Interference Graph Misspecification" paper by Liang Shi et al if you find a suitable source for it) while IPW methods suffer from high variance (which partial assignment exacerbates).>
+\textbf{Bipartite experiments.} The bipartite interference framework was formalised by \citet{zigler2021bipartite}, motivated by environmental applications in which interventions on power plants affect health outcomes in surrounding areas; see also \citet{hudgens2008toward,aronow2017estimating,eckles2017design} for the general treatment of interference in experiments. In online platforms, bipartite experiments arise in marketplaces and advertising systems, and a line of work addresses their design: correlation-clustering designs \cite{pouget2019variance}, exposure-optimised designs \cite{harshaw2023erl}, and cluster designs for one-sided randomisation \cite{brennan2022cluster}. \citet{bajari2021multiple} study multiple randomisation designs, which randomise both sides of the graph simultaneously. These design questions are orthogonal to ours; we take the (Bernoulli) design as given and focus on estimation when part of the population is not enrolled.
 
+\textbf{Two families of estimators.} Existing estimators of the GATE in bipartite experiments fall into two broad groups. \emph{IPW (Horvitz--Thompson) estimators} build on exposure mappings \cite{aronow2017estimating}: each analysis unit's treatment configuration is summarised by an exposure level, and outcomes are reweighted by the inverse probability of the observed exposure. \citet{zigler2021bipartite} and \citet{doudchenko2020causal} develop this approach for bipartite structures, the latter using generalised propensity scores \cite{hirano2004propensity}. The appeal of IPW is minimal outcome-model assumptions; its Achilles heel is variance: the probability of observing a ``pure'' (all-treated or all-control) exposure decays geometrically in the number of connections, so the weights explode. \emph{ERL-type estimators} instead posit a response structure that is linear in the exposure. \citet{harshaw2023erl} introduce the exposure-reweighted linear (ERL) estimator, prove its unbiasedness, consistency and asymptotic normality under a linear exposure-response model, and construct an unbiased variance estimator. \citet{shi2025scalableanalysisbipartiteexperiments} make the ERL pipeline scalable, add covariate adjustment (CA-ERL), and propose randomisation-based inference; \citet{lu2025design} give a design-based analysis with a conservative variance estimator and covariate adjustment. All of the above assume full assignment of the randomisation units. We note that the validity proof of the randomisation-inference variance estimator in \citet{shi2025scalableanalysisbipartiteexperiments} was subsequently found to be incorrect and the paper was withdrawn by its authors; Section~\ref{subsubsec:ri} contains a corrected treatment in our (more general) partial-assignment setting, which requires both a repaired concentration argument and a strengthened null hypothesis.
 
+\textbf{Partial participation.} Closest to our work, \citet{tan2025estimating} study bipartite experiments with \emph{partial eligibility}: a fixed, known subset of treatment-side units is eligible for randomisation, while the remaining units are never treated. They define total-effect estimands restricted to the eligible side (PTTE) and to spillovers on ineligible units (STTE), and estimate them with an ensemble of outcome models, generalised propensity scores, and machine-learning components, with bootstrap inference. Our setting differs in three substantive ways. First, in our framework participation itself is randomised (with probability $q$), which is the norm when an experimentation platform carves the population into slices for concurrent tests; eligibility in \citet{tan2025estimating} is a deterministic attribute. Second, and more importantly, we make no assumption about what the unassigned units experience---they may be exposed to \emph{other} interventions, as happens when they are allocated to concurrent experiments---whereas ineligible units in \citet{tan2025estimating} receive the status-quo experience by construction. Third, our target is the classical GATE for a rollout to the \emph{whole} population, and our machinery is design-based with closed-form weights, exact unbiasedness, central limit theorems, and analytic variance estimators, rather than model-based ensembles with bootstrap uncertainty. The two approaches are thus complementary: theirs favours flexible outcome modelling under fixed eligibility, ours favours transparent, assumption-light inference under randomised partial assignment.
 
-\section{Proposed Estimator}
+\textbf{Graph misspecification.} Running a full-assignment estimator on the reduced graph is equivalent to analysing the experiment under a misspecified interference graph. \citet{weinstein2026causal} bound the bias arising from misspecified interference networks and show it grows with the divergence between the assumed and true networks; \citet{savje2024misspecified} studies when misspecified exposure mappings still permit meaningful estimation. Our contribution can be seen as replacing an (incorrectly) reduced graph with a weighting scheme on the full graph that restores unbiasedness at a modest variance cost.
+
+\section{Proposed Estimator}\label{sec:estimator}
 
 \subsection{Problem Setup and Notation}\label{subsec:notation}
 
-%<TODO: enrich this section with "inline" examples>
-%<TODO: mention alternative names for analysis and randomisation units existing in the literature>
+Let $\mathcal A$ and $\mathcal R$ be the populations of $N$ analysis and $M$ randomisation units, respectively, and let $\mathcal C\subset \mathcal A \times \mathcal R$ be the set of connections between them. Together, the triple $\langle \mathcal A,\,\mathcal R,\,\mathcal C\rangle$ forms a bipartite graph that is commonly referred to as the \emph{experiment graph}. In the literature, analysis units are also called \emph{outcome} or \emph{measurement} units, and randomisation units are also called \emph{diversion}, \emph{treatment}, or \emph{intervention} units \cite{zigler2021bipartite,harshaw2023erl,doudchenko2020causal,tan2025estimating}. In our running marketplace example, the randomisation units are items, the analysis units are customers, and a connection $(a,\,r)$ records that customer $a$ interacts with item $r$. We use $d_\mathcal{A}$ to denote the maximum number of randomisation units connected to a given analysis unit and $d_\mathcal{R}$~--- the maximum number of analysis units connected to a given randomisation unit.
 
-Let $\mathcal A$ and $\mathcal R$ be the populations of $N$ analysis (outcome) and $M$ randomisation (diversion) units, respectively, and let $\mathcal C\subset \mathcal A \times \mathcal R$ be the set of connections between them. Together, the triple $\langle \mathcal A,\,\mathcal R,\,\mathcal C\rangle$ forms a bi-partite graph that is commonly referred to as the experiment graph. We use $d_\mathcal{A}$ to denote the maximum number of randomisation units connected to a given analysis unit and $d_\mathcal{R}$~--- the maximum number of analysis units connected to a given randomisation unit.
-
-Randomisation units are allocated for participation in the experiment independently at random with probability $q\in(0,\,1)$. Let $\mathbf{S} =(S_1,\,\ldots,\,S_M)$ be the vector of allocation indicators: $S_i$ is 1 if the $i$-th ransomisation unit participates in the experiment and $0$ otherwise, $S_i\iidsiminline Bernoulli(q)$. Randomisation units participating in the experiment are randomly and independently assigned to the treatment group with probability $p\in(0,\,1)$. Let $\mathbf Z=(Z_1\,\ldots,\,Z_M)$ be the vector of treatment indicators: $Z_i$ is 1 if the $i$-th user is (or would be, should they participate) assigned to the treatment, $Z_i\iidsiminline Bernoulli(p)$. We assume that the allocation and assignment are performed independently of each other, i.e., $\mathbf S \ind \mathbf{Z}$. While existing analyses assume that all randomisation units are assigned (i.e., $q=1$), in this paper we consider the partial assignment case ($q < 1$). It means that we have three groups of randomisation units: unallocated ($S_i = 0$), treatment ($S_i=1$ and $Z_i=1$), and control ($S_i=1$ and $Z_i=0$):
+Randomisation units are allocated for participation in the experiment independently at random with probability $q\in(0,\,1]$. Let $\mathbf{S} =(S_1,\,\ldots,\,S_M)$ be the vector of allocation indicators: $S_r$ is 1 if the $r$-th randomisation unit participates in the experiment and $0$ otherwise, $S_r\iidsiminline \mathrm{Bernoulli}(q)$. Randomisation units participating in the experiment are randomly and independently assigned to the treatment group with probability $p\in(0,\,1)$. Let $\mathbf Z=(Z_1,\,\ldots,\,Z_M)$ be the vector of assignment indicators: $Z_r$ is 1 if the $r$-th unit is (or would be, should it participate) assigned to the treatment, $Z_r\iidsiminline \mathrm{Bernoulli}(p)$. In industrial experimentation systems both indicators are computed by deterministic hashing of unit identifiers, so $Z_r$ is well defined (though immaterial) even for units that do not participate. We assume that allocation and assignment are performed independently of each other, i.e., $\mathbf S \ind \mathbf{Z}$. While existing analyses assume that all randomisation units are assigned (i.e., $q=1$), in this paper we consider the partial assignment case ($q < 1$). It means that we have three groups of randomisation units: unassigned ($S_r = 0$), treatment ($S_r=1$ and $Z_r=1$), and control ($S_r=1$ and $Z_r=0$):
 \begin{center}
     \begin{tabular}{cccc}
     \hline
     Group & \multicolumn{2}{c}{Indicator Values} & Expected Count\\
-    & $S_i$ & $Z_i$ & \\
+    & $S_r$ & $Z_r$ & \\
     \hline
-    Unallocated & 0 & any & $(1-q) M$\\
+    Unassigned & 0 & any & $(1-q) M$\\
     Treatment & 1 & 1 & $pq M$\\
     Control & 1 & 0 & $(1-p)q M$\\
     \hline
 \end{tabular}
 \end{center}
-Note that even though unallocated units do not participate in the experiment, they are still connected to analysis units via the experiment graph and influence the outcomes associated with analysis units.
+Note that even though unassigned units do not participate in the experiment, they are still connected to analysis units via the experiment graph and influence the outcomes associated with analysis units. In the marketplace example: a customer's satisfaction is shaped by all the items they interact with, including items that our pricing test never touches.
 
 For a given analysis unit $a\in\mathcal A$, let $Y_a$ be the outcome (random) variable (which we assume to be integrable) and let $e_a(\mathbf{s},\,\mathbf{z})$
-%$e_a\colon {0,\,1}^M\times \{0,\,1\}^M\mapsto {\mathrm{I}\!\mathrm{R}}$ 
 be the expected outcome conditional on $\mathbf S = \mathbf s$ and $\mathbf Z = \mathbf z$, i.e.,
 \begin{equation}\label{eq:ea}
-    e_a(\mathbf{s},\,\mathbf{z}) = \E[Y_a\mid \mathbf{S} = \mathbf{s},\,\mathbf{Z}=\mathbf{z}],\qquad \mathbf{s}\in \{0,\,1\}^M,\, \mathbf{z}\in \{0,\,1\}^M.
+    e_a(\mathbf{s},\,\mathbf{z}) = \E[Y_a\mid \mathbf{S} = \mathbf{s},\,\mathbf{Z}=\mathbf{z}],\quad \mathbf{s}\in \{0,\,1\}^M,\, \mathbf{z}\in \{0,\,1\}^M.
 \end{equation}
-Furthermore, for each $a\in\mathcal{A}$, define the function $\mu_a$ as follows.
+Furthermore, for each $a\in\mathcal{A}$, define the function $\mu_a$ as follows,
 \begin{eqnarray}\label{eq:ma}
-    \mu_a(x,\,y) &=& \E_{S_i\iidsim Bernoulli(x),\,Z_i\iidsim Bernoulli(y),\,\mathbf S\ind \mathbf Z}[e_a(\mathbf S,\,\mathbf Z)]\nonumber\\
-    &=& \sum_{\textbf{s},\textbf{z}\in \{0,\,1\}^M}\prod_{i=1}^Mx^{s_i}(1-x)^{1-s_i}y^{z_i}(1-y)^{1-z_i}e_a(\textbf{s},\,\textbf{z}),
+    \mu_a(x,\,y) &=& \E_{S_r\iidsim \mathrm{Bern}(x),\,Z_r\iidsim \mathrm{Bern}(y),\,\mathbf S\ind \mathbf Z}[e_a(\mathbf S,\,\mathbf Z)]\nonumber\\
+    &=& \sum_{\textbf{s},\textbf{z}\in \{0,\,1\}^M}\prod_{r=1}^Mx^{s_r}(1-x)^{1-s_r}y^{z_r}(1-y)^{1-z_r}e_a(\textbf{s},\,\textbf{z}),
 \end{eqnarray}
-$x\in[0,\,1]$, $y\in[0,\,1]$.
-%<TODO: mention that 0^0 is defined as 1 in the formula above (e.g., when x=1)>
-Finally, let the function $\mu$ be the average of $\mu_a$ over the population of analysis units $\mathcal{A}$, i.\,e.,
+$x\in[0,\,1]$, $y\in[0,\,1]$, where we adopt the convention $0^0=1$ (so that, e.g., the expression is well defined at $x\in\{0,\,1\}$). The function $\mu_a$ is the expected outcome of unit $a$ in a hypothetical experiment with allocation rate $x$ and treatment rate $y$; it is a polynomial in $(x,\,y)$ and thus infinitely differentiable. Finally, let the function $\mu$ be the average of $\mu_a$ over the population of analysis units $\mathcal{A}$, i.\,e.,
 \begin{equation}\label{eq:mu}
     \mu(x,\,y) = \frac 1 N \sum_{a\in\mathcal{A}} \mu_a(x,\,y),\qquad x\in[0,\,1],\, y\in[0,\,1].
 \end{equation}
 
-The goal of the experimenter is to estimate the global average treatment effect
+The goal of the experimenter is to estimate the \emph{global average treatment effect},
 \begin{equation}\label{eq:gate}
-    GATE = \frac 1 N\sum_{a\in\mathcal A} \left(\mu_a(1,\,1) - \mu_a(1,\,0)\right) = \mu(1,\,1) - \mu(1,\,0).
+    GATE = \frac 1 N\sum_{a\in\mathcal A} \left(\mu_a(1,\,1) - \mu_a(1,\,0)\right) = \mu(1,\,1) - \mu(1,\,0),
 \end{equation}
+i.e., the contrast between average expected outcomes when \emph{all} randomisation units receive treatment and when all of them receive control. This is the quantity relevant for the launch decision: it describes the world after a full rollout.
 
 In what follows, $\mathcal D(a)$ denotes the set of randomisation units that are connected to the analysis unit $a$, i.e.,
-\begin{equation*}%\label{def:Da}
+\begin{equation*}
     \mathcal{D}(a) = \{r\in\mathcal{R}\colon (a,\,r)\in \mathcal{C}\}.
 \end{equation*}
-% Furthermore, let $\mathcal T(a)$ be the collection of analysis units that have a shared connection with $a$, i.e.,
-% \begin{equation}\label{def:Ta}
-%     \mathcal T(a) = \{a'\in\mathcal A\mid \mathcal D(a') \cap \mathcal D(a) \neq \emptyset\}.
-% \end{equation}
+For example, if customer $a$ interacts with five items, of which two are allocated to the experiment and one of those two is treated, then $|\mathcal D(a)|=5$ and the realised allocation/assignment pattern on $\mathcal D(a)$ has two participating units, one of which is treated.
 
-% and $\varepslon_a$ is the difference between the outcome $Y_a$ and its conditional expectation given allocation and assignment indicators,
-% \begin{equation*}
-%     \varepsilon_a = Y_a - e_a(\mathbf{S},\,\mathbf{Z}).
-% \end{equation*}
-% The symbol $\overline{\mathcal{D}}(a)$ is the complement of $\mathcal{D}(a)$ to $\{1,\,\ldots,\,M\}$, i.e., the set of randomisation units that $a$ is not connected to. Furthermore, let 
-% $\mathbf{S}_{\mathcal{D}(a)}$, $\mathbf{Z}_{\mathcal{D}(a)}$, $\mathbf{S}_{\overline{\mathcal{D}}(a)}$, and $\mathbf{Z}_{\overline{\mathcal{D}}(a)}$ are the collections of random variables from $\mathbf{S}$ and $\mathbf{Z}$ with indices in $\mathcal{D}(a)$ and $\overline{\mathcal{D}}(a)$, respectively. Finally, let $\mathbf Y_{\overline{\mathcal D}(a)}$ denote the collection of outcome variables of those units that do not have any common connections with $a$, i.e.,
-% \begin{equation*}
-%     \mathbf Y_{\overline{\mathcal D}(a)} = \{Y_{a'}\mid a'\in\mathcal{A}\colon \mathcal{D}(a') \subset \overline{\mathcal{D}}(a)\}.
-% \end{equation*}
+All random variables are assumed to be defined on a common probability space $(\Omega,\,\mathcal F,\,\Pr)$. Following \cite[Definition~3.1]{Ro:11}, a random variable $\xi$ belonging to a finite collection $\mathcal X$ is said to have a \emph{dependency neighbourhood} $\mathcal E\subset \mathcal X$ (with $\xi\in\mathcal E$) if $\xi$ is independent of the collection $\mathcal X \setminus \mathcal E$.
 
-All random variables are assumed to be defined on a probability space $(\Omega,\,\mathcal F,\,\R)$. %<TODO: check the canonical formulation of this and rephrase if needed>
-A random variable $\xi\colon\Omega\mapsto\R$ belonging to a collection $\mathcal C$ is said to have a dependency neighbourhood $\mathcal E\subset \mathcal C$  in $\mathcal C$ if $\xi$ together with all variables from $\mathcal C \setminus \mathcal E$ are jointly independent. %<TODO: add a citation for this definition>
-
-% As before, $\mathcal{A}$ and $\mathcal{R}$ are the populations of analysis and randomisation units, consisting of $N$ and $M$ units, respectively.
-
-% \subsection{ERL Estimation in the Presence of Unassigned Units}
 \subsection{Exposure- and Allocation-Reweighted Linear Estimator}\label{subsec:estimator}
 
-Let $H_a$ be the so called exposure of analysis unit $a$, i.e., the percentage of users in treatment among the randomisation units $a$ is connected to,
+Let $H_a$ be the so-called exposure of analysis unit $a$, i.e., the share of treated units among the randomisation units $a$ is connected to,
 \begin{equation}\label{eq:Ha}
     H_a = \frac{1}{|\mathcal{D}(a)|}\sum_{r\in\mathcal{D}(a)} Z_r.
 \end{equation}
-The standard ERL estimator \cite{harshaw2023erl} is defined as the following sum of outcomes $Y_a$ weighted by the (standardised) exposures,
+When all randomisation units are assigned ($q=1$), the standard ERL estimator \cite{harshaw2023erl} is defined as the average of outcomes $Y_a$ weighted by the standardised exposures,
 \begin{equation}{\label{eq:erl}}
-    \hat\tau_{ERL} = \frac 1 N \sum_{i=1}^N \frac{H_a - \E[H_a]}{\textup{var} \left(H_a\right)}Y_a =\frac{1}{N}\sum_{i=1}^N\sum_{r\in\mathcal{D}(a)}\frac{Z_r - p}{p(1-p)}Y_a.
+    \hat\tau_{ERL} = \frac 1 N \sum_{a\in\mathcal A} \frac{H_a - \E[H_a]}{\var \left(H_a\right)}Y_a =\frac{1}{N}\sum_{a\in\mathcal A}\sum_{r\in\mathcal{D}(a)}\frac{Z_r - p}{p(1-p)}Y_a.
 \end{equation}
-The interpretation of this definition is that units with a greater percentage of randomisation units from treatment among their connections contribute more to the effect estimate.
-As demonstrated in \cite{harshaw2023erl}, ERL is unbiased for GATE under the linear exposure-response assumption.
+The interpretation of this definition is that units with a greater share of treated randomisation units among their connections contribute more to the effect estimate. As demonstrated in \cite{harshaw2023erl}, ERL is unbiased for GATE under a linear exposure-response assumption.
 
-In this paper, we show that for unbiased estimation of the global average treatment effect \eqref{eq:gate} in the presence of unassigned randomisation units, one needs to re-weight the observations not only by the exposure but also by the percentage of connections participating in the experiment. Specifically, let $G_a$ be the percentage of participating units among the connections of $a$,
+Under partial assignment ($q<1$) two additional quantities describe how well the experiment covers the connections of $a$. Let $G_a$ be the share of participating units among the connections of $a$ (the \emph{allocation coverage}),
 \begin{equation}\label{eq:Ga}
-    G_a = \frac{1}{|\mathcal{D}(a)|}\sum_{r\in\mathcal{D}(a)} S_r.
+    G_a = \frac{1}{|\mathcal{D}(a)|}\sum_{r\in\mathcal{D}(a)} S_r,
 \end{equation}
-The estimator we propose is
+and let $\tilde H_a$ be the exposure computed \emph{within} the participating connections,
+\begin{equation}\label{eq:Hta}
+    \tilde H_a = \frac{\sum_{r\in\mathcal{D}(a)} S_rZ_r}{\sum_{r\in\mathcal{D}(a)} S_r}\quad\textup{if } G_a>0.
+\end{equation}
+The estimator we propose weights each observation by the product of the allocation coverage and the centred within-experiment exposure, scaled by the inverse allocation rate:
 \begin{eqnarray}\label{eq:earl}
-    \hat \tau_{EARL} &=& \frac 1 N \sum_{a\in \mathcal A} \left(\frac{G_a - \E[G_a]}{\textup{var} \left(G_a\right)}\cdot \frac{H_a - \E[H_a]}{\textup{var} \left(H_a\right)}\right)Y_a.
-    % \nonumber \\
-    % &=& \frac 1 N \sum_{a\in \mathcal A} \left(\sum_{r\in\mathcal{D}(a)}\frac{S_r - q}{q(1-q)}\cdot \sum_{r\in\mathcal{D}(a)}\frac{Z_r - p}{p(1-p)}\right)Y_a 
+    \hat \tau_{EARL} &=& \frac 1 N \sum_{a\in \mathcal A} |\mathcal D(a)|\,\frac{G_a\,(\tilde H_a - p)}{q\,p(1-p)}\, Y_a \nonumber\\
+    &=& \frac 1 N \sum_{a\in \mathcal A} \sum_{r\in\mathcal{D}(a)}\frac{S_r}{q}\cdot\frac{Z_r - p}{p(1-p)}\, Y_a,
 \end{eqnarray}
-We call it Exposure- and Allocation-Reweighted Linear (EARL) estimator. In comparison with the standard ERL estimator \eqref{eq:erl}, EARL additionally tilts the weights towards those analysis units that have a high percentage of participating randomisation units among their connections in the bipartite graph.
+with the convention that the first form is $0$ whenever $G_a=0$ (as the second form makes explicit). We call it the Exposure- and Allocation-Reweighted Linear (EARL) estimator. In comparison with the standard ERL estimator \eqref{eq:erl}, EARL (i) computes exposures only over the connections actually enrolled in the experiment, and (ii) additionally tilts the weights towards those analysis units that have a high share of participating randomisation units among their connections, upweighting every participating connection by the inverse of its allocation propensity. At $q=1$ the two coincide: EARL is a strict generalisation of ERL.
 
-One particularly important feature of EARL is that, as will be demonstrated in Section~\ref{subsec:analysis}, it is unbiased (and consistent) for GATE \eqref{eq:gate} regardless of the actual experience the unassigned units receive. They can be, for example, exposed to treatment (as in the case of a ``backtest'') or allocated to other, disjoint experiments. This has very important practical applications as we no longer need to ensure the unassigned units keep receiving the control experience and have a much larger experimentation freedom.
+Three practical remarks are in order. First, EARL only requires the assignment indicators $Z_r$ of \emph{participating} units ($S_r=1$), which are always observed; the ``would-be'' assignments of unassigned units are not needed. Second, the estimator is linear in the outcomes and its weights depend only on design quantities ($q$, $p$) and the experiment graph, so it can be computed in a single pass over the graph edges---an $O(|\mathcal C|)$ computation that fits distributed query engines, similarly to \cite{shi2025scalableanalysisbipartiteexperiments}. Third, as will be demonstrated in Section~\ref{subsec:analysis}, EARL is unbiased (and consistent) for GATE \eqref{eq:gate} \emph{regardless of the actual experience the unassigned units receive}. They can be, for example, exposed to the treatment (as in the case of a ``backtest'') or allocated to other, disjoint experiments. This has important practical consequences: the experimenter need not ensure that unassigned units keep receiving the control experience, and thus retains much greater experimentation throughput.
 
-% \noindent\textbf{Example~1.} Consider a hypothetical experiment in which the outcome for a given analysis unit $a$ is 
-% proportional to the number of randomisation units from the treatment group it is connected to, e.g., $Y_a = \lambda \sum_{r\in\mathcal D(a)} S_rZ_r$ for some $\lambda > 0$. In that case, the global average treatment effect (GATE) defined by \eqref{eq:gate} equals $\lambda N^{-1}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|$. One of the existing approaches to GATE estimation in bi-partite experiments with partial assignment consists of ignoring the presence of unassigned units, i.e., excluding them and computing the standard ERL estimator \cite{harshaw2023erl} on the reduced graph,
-% $$
-%     \hat \tau = \frac 1 N \sum_{a\in\mathcal{A}}\sum_{r\in\mathcal{D}(a)}S_r\frac{Z_r-p}{p(1-p)}Y_a.
-% $$
-% It is easy to see that this approach leads to a biased estimator in this example:
-% \begin{eqnarray*}
-%     \E[\hat\tau] &=& \E\left[\frac 1 N \sum_{a\in\mathcal{A}}\left(\sum_{r\in\mathcal{D}(a)}S_r\frac{Z_r - p}{p(1-p)}\right)\left(\lambda\sum_{r\in\mathcal{D}(a)}S_rZ_r\right)\right]\\
-%     &\stackrel{A\ref{a:1}-A\ref{a:3}}{=}& \frac {\lambda}{Np(1-p)}\sum_{a\in\mathcal{A}} \left(\E\left[\sum_{r\in\mathcal{D}(a)}\left(S_rZ_r\right)^2  \right] - p\sum_{a\in\mathcal{A}}\E\left[\sum_{r\in\mathcal{D}(a)} S_r^2Z_r \right]\right)\\
-%     &\stackrel{A\ref{a:1}-A\ref{a:3}}{=}& \frac \lambda {Np(1-p)}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|\left(qp - p^2q\right)\\
-%     &=&q\lambda N^{-1}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|\\
-%     &=&q \cdot GATE.
-% \end{eqnarray*}
-% The reduction of the graph leads to the underestimation of the true treatment effect as the estimator does not ``know'' that the actual number of connections is bigger and the analysis units will be affected to a greater extent on average when the treatment gets rolled out to \emph{all} randomisation units of the original graph. In contrast, the estimator \eqref{hatG} constructed in this paper accounts for the full graph structure correctly and has no bias,
-% \begin{eqnarray*}
-%     \E[\hat\tau_{EARL}] &=& \E\Bigg[\frac 1 N \sum_{a\in\mathcal{A}}\Bigg(\sum_{r\in\mathcal{D}(a)}\frac{S_r - q}{q(1-q)}\times \sum_{r\in\mathcal{D}(a)}\frac{Z_r - p}{p(1-p)}\\&&{}\times \lambda\sum_{r\in\mathcal{D}(a)}S_rZ_r\Bigg)\Bigg]\\
-%     &\stackrel{A\ref{a:1}-A\ref{a:3}}{=}& \frac {\lambda}{Nq(1-q)p(1-p)} \sum_{a\in\mathcal{A}}\Bigg(\sum_{r\in\mathcal{D}(a)}\E\left[S_r^2Z_r^2\right] \\ &&{}- q\sum_{r\in\mathcal{D}(a)} \E\left[S_rZ_r^2 \right]- p\sum_{r\in\mathcal{D}(a)} \E\left[S_r^2Z_r \right] \nonumber\\&&{}+ qp\sum_{r\in\mathcal{D}(a)} \E\left[S_rZ_r \right]\Bigg)\\
-%     &\stackrel{A\ref{a:1}-A\ref{a:3}}{=}& \frac \lambda {Nq(1-q)p(1-p)}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|\left(qp - q^2p-p^2q+q^2p^2\right)\\
-%     &=&\lambda N^{-1}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|\\
-%     &=& GATE.
-% \end{eqnarray*}
-
-\noindent \textbf{Example}.
-Consider an experiment in which unassigned randomisation units are allocated to a concurrent, non-overlapping test. A randomisation unit adds $0$, $1$, or $\alpha$ to the outcome of each connected analysis unit depending on whether the randomisation unit belongs to control, treatment, or the group of non-allocated units, respectively. The effect $\alpha$ from unallocated units does not have to be 0, for example, because of their participation in a concurrent A/B test. The GATE \eqref{eq:gate} in this case equals $N^{-1}\sum_{a\in\mathcal{A}}|\mathcal{D}(a)|$.
-One of the existing approaches to GATE estimation in bi-partite experiments with partial assignment consists of ignoring the presence of unassigned units, i.e., excluding them and computing the standard ERL estimator \cite{harshaw2023erl} on the reduced graph,
-$$
-    \hat \tau = \frac 1 N \sum_{a\in\mathcal{A}}\sum_{r\in\mathcal{D}(a)}S_r\frac{Z_r-p}{p(1-p)}Y_a.
-$$
-It is easy to see that this approach leads to a biased estimator in this example:
+\medskip
+\noindent \textbf{Example.}
+Consider an experiment in which unassigned randomisation units are allocated to a concurrent, non-overlapping test. A randomisation unit adds $0$, $1$, or $\alpha$ to the outcome of each connected analysis unit depending on whether the randomisation unit belongs to control, treatment, or the group of unassigned units, respectively:
+\begin{equation*}
+    Y_a = \sum_{r\in\mathcal D(a)}\bigl(\alpha(1-S_r) + S_rZ_r\bigr).
+\end{equation*}
+The effect $\alpha$ of unassigned units does not have to be 0, for example, because of their participation in a concurrent A/B test. The GATE \eqref{eq:gate} in this case equals $N^{-1}\sum_{a\in\mathcal{A}}|\mathcal{D}(a)|$.
+One of the existing approaches to GATE estimation in bipartite experiments with partial assignment consists of ignoring the presence of unassigned units, i.e., excluding them and computing the standard ERL estimator \cite{harshaw2023erl} on the reduced graph,
+\begin{equation}\label{eq:erl-drop}
+    \hat \tau_{drop} = \frac 1 N \sum_{a\in\mathcal{A}}\sum_{r\in\mathcal{D}(a)}S_r\frac{Z_r-p}{p(1-p)}Y_a.
+\end{equation}
+It is easy to see that this approach leads to a biased estimator in this example. Using the independence of the indicators and $\E[Z_r-p]=0$, all cross terms ($r\neq r'$) and all $\alpha$-terms vanish, and
 \begin{eqnarray*}
-    \E[\hat\tau] &=& \E\left[\frac 1 N \sum_{a\in\mathcal{A}}\left(\sum_{r\in\mathcal{D}(a)}S_r\frac{Z_r - p}{p(1-p)}\right)\left(\sum_{r\in\mathcal{D}(a)}(\alpha(1-S_r) + S_rZ_r)\right)\right]\\
-    &\stackrel{A\ref{a:1}}{=}& \frac {1}{Np(1-p)}\sum_{a\in\mathcal{A}} \left(\E\left[\sum_{r\in\mathcal{D}(a)}\left(S_rZ_r\right)^2  \right] - p\sum_{a\in\mathcal{A}}\E\left[\sum_{r\in\mathcal{D}(a)} S_r^2Z_r \right]\right)\\
-    &\stackrel{A\ref{a:1}}{=}& \frac 1 {Np(1-p)}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|\left(qp - p^2q\right)\\
-    &=&q N^{-1}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|\\
+    \E[\hat\tau_{drop}] &=& \frac {1}{Np(1-p)}\sum_{a\in\mathcal{A}} \sum_{r\in\mathcal{D}(a)}\E\left[S_r(Z_r-p)S_rZ_r  \right]\\
+    &=& \frac 1 {Np(1-p)}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|q\,p(1-p)\\
     &=&q \cdot GATE.
 \end{eqnarray*}
-The reduction of the graph leads to the underestimation of the true treatment effect as the estimator does not ``know'' that the actual number of connections is bigger and the analysis units will be affected to a greater extent on average when the treatment gets rolled out to \emph{all} randomisation units of the original graph. In contrast, the EARL estimator \eqref{eq:earl} constructed in this paper accounts for the full graph structure correctly and has no bias,
-% It is easy to verify the unbiasedness of EARL \eqref{eq:earl} for GATE in this example, despite the presence of unassigned units and the fact that, differently from control units, they make non-zero contributions to the observed outcomes. Indeed,
+The reduction of the graph leads to an underestimation of the true treatment effect: the estimator does not ``know'' that the actual number of connections is larger and that the analysis units will be affected to a greater extent when the treatment is rolled out to \emph{all} randomisation units of the original graph. In contrast, the EARL estimator \eqref{eq:earl} accounts for the allocation propensity and has no bias:
 \begin{eqnarray*}
-    \E[\hat\tau_{EARL}] &=& \E\Bigg[\frac 1 N \sum_{a\in\mathcal{A}}\Bigg(\sum_{r\in\mathcal{D}(a)}\frac{S_r - q}{q(1-q)}\times \sum_{r\in\mathcal{D}(a)}\frac{Z_r - p}{p(1-p)}\\&&{}\times \sum_{r\in\mathcal{D}(a)}\left(\alpha(1-S_r) + S_rZ_r\right)\Bigg)\Bigg]\\
-    &\stackrel{A\ref{a:1}}{=}& \frac {1}{Nq(1-q)p(1-p)} \sum_{a\in\mathcal{A}}\sum_{r\in\mathcal{D}(a)}\Bigg(\E\bigg[\alpha S_r(1-S_r)Z_r\\
-    &&{}-\alpha q(1-S_r)Z_r-\alpha pS_r(1-S_r)+\alpha qp(1-S_r)\\&&{} +S_r^2Z_r^2 - qS_rZ_r^2 - pS_r^2Z_r + pqS_rZ_r\bigg]\Bigg)\\
-    &\stackrel{A\ref{a:1}}{=}& \frac {1}{Nq(1-q)p(1-p)} \sum_{a\in\mathcal{A}}|\mathcal{D}(a)|(0-\alpha q(1-q)p-0+\alpha qp(1-q)\\&&{}+qp-q^2p-p^2q+p^2q^2)\\ 
-    &=&N^{-1} \sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|\\
-    &=& GATE.
+    \E[\hat\tau_{EARL}] &=& \frac {1}{Nqp(1-p)}\sum_{a\in\mathcal{A}} \sum_{r\in\mathcal{D}(a)}\E\left[S_r(Z_r-p)S_rZ_r  \right]\\
+    &=& \frac 1 {Nqp(1-p)}\sum_{a\in\mathcal{A}}\left|\mathcal{D}(a)\right|q\,p(1-p)
+    = GATE.
 \end{eqnarray*}
-Note that the computed expectations of $\hat \tau$ and $\hat\tau_{EARL}$ above do not depend on $\alpha$. It means that even if the unallocated units get the same experience as control ($\alpha=0$) ignoring them still leads to biased estimation in this example and on the other hand, our proposed estimator remains unbiased regardless of the specific value of $\alpha$.
+Note that the computed expectations of $\hat \tau_{drop}$ and $\hat\tau_{EARL}$ above do not depend on $\alpha$. It means that even if the unassigned units receive the same experience as control ($\alpha=0$), ignoring them still leads to biased estimation in this example; and on the other hand, our proposed estimator remains unbiased regardless of the specific value of $\alpha$.
 
-% \subsection{Assumptions}\label{subsec:assumptions}
+\medskip
+The example suggests that the bias of the reduced-graph estimator could be repaired by dividing by $q$---and indeed, EARL \eqref{eq:earl} equals $\hat\tau_{drop}/q$. This simple correction is, however, not ad hoc: the next proposition shows that among \emph{all} linear reweighting estimators that correct the allocation in an unbiased way, EARL is the most efficient, uniformly over the class of outcome models introduced in Section~\ref{subsec:analysis}. Consider the family
+\begin{equation}\label{eq:class}
+    \hat\tau_{c} = \frac 1 N \sum_{a\in \mathcal A} \sum_{r\in\mathcal{D}(a)}c(S_r)\,\frac{Z_r - p}{p(1-p)}\, Y_a,\qquad c\colon\{0,\,1\}\mapsto\R,
+\end{equation}
+which contains the reduced-graph ERL ($c(s)=s$), EARL ($c(s)=s/q$), and, e.g., the estimator with the standardised-allocation weight $c(s)=(s-q)/(q(1-q))$.
 
-% In this section we list and discuss assumptions used in the theoretical analysis of the proposed estimator in Section~\ref{subsec:estimator} below. Note that not every result makes use of all these assumptions. Each of our formal statements specifies the exact set of conditions under which it is established.   
+\begin{proposition}\label{prop:optimality}
+    Let Assumptions A\ref{a:1} and A\ref{a:mu} of Section~\ref{subsec:analysis} hold, let the outcome variables be square integrable, and suppose that the conditional distribution of $(Y_a)_{a\in\mathcal A}$ given $(\mathbf S,\,\mathbf Z)$ does not depend on the would-be assignments $\{Z_r\colon S_r=0\}$. Then:
+    \begin{itemize}
+        \item[\textup{(a)}] $\hat\tau_c$ satisfies $\E[\hat\tau_c]=\E[\hat\tau_{EARL}]$ for every outcome model satisfying the above if and only if $q\,c(1)=1$; in particular, under the conditions of Theorem~\ref{th:unbiasedness}(b) below, $\hat\tau_c$ is unbiased for GATE if and only if $q\,c(1)=1$;
+        \item[\textup{(b)}] for every $c$ with $q\,c(1)=1$,
+        \begin{equation*}
+        \var(\hat\tau_c) = \var(\hat\tau_{EARL}) + c(0)^2\,\var(\hat\tau_U),
+        \end{equation*}
+        where $\hat\tau_U = N^{-1}\sum_{a}\sum_{r\in\mathcal D(a)}(1-S_r)\frac{Z_r-p}{p(1-p)}Y_a$. Consequently, $\var(\hat\tau_c) \ge \var(\hat\tau_{EARL})$, with equality if and only if $c(0)=0$ or $\var(\hat\tau_U)=0$.
+    \end{itemize}
+\end{proposition}
 
-\subsection{Unbiasedness and consistency}\label{subsec:analysis}
+The proof (Appendix~\ref{app:optimality}) rests on an exact orthogonal decomposition: any admissible $\hat\tau_c$ equals EARL plus a mean-zero term that is uncorrelated with it, so deviating from $c(0)=0$ can only add noise. Proposition~\ref{prop:optimality} also explains why a seemingly natural alternative---weighting by the product of the \emph{standardised} allocation coverage and the \emph{standardised} full-graph exposure, $\frac{G_a - \E[G_a]}{\var(G_a)}\cdot \frac{H_a - \E[H_a]}{\var(H_a)}$, which arises from a Horvitz--Thompson derivative construction---is inefficient: its ``diagonal'' part is the member of \eqref{eq:class} with $c(s) = (s-q)/(q(1-q))$, which is admissible but dominated, and its off-diagonal cross terms contribute pure noise whose variance grows with the degree $|\mathcal D(a)|$. We include this variant in the simulation study, where its error exceeds EARL's by 1--2 orders of magnitude on dense graphs.
 
-We begin by stating and discussing the assumptions we use to prove the unbiasedness of the EARL estimator \eqref{eq:earl}. The first assumption spells a few basic design characteristics of the analysed bi-partite experiment.
+\subsection{Unbiasedness and Consistency}\label{subsec:analysis}
 
-% \subsubsection*{Experimental Design Assumptions}
+We begin by stating and discussing the assumptions we use to prove the unbiasedness of the EARL estimator \eqref{eq:earl}. The first assumption formalises the experimental design described in Section~\ref{subsec:notation}.
 
-\begin{enumerate}[label=\textbf{A\arabic*.},ref=\arabic*]
-
-\item\label{a:1}
-\begin{itemize} 
-\item The allocation of randomisation units to the experiment is carried out independently at random with probability $q\in(0,\,1)$:
+\begin{assumption}\label{a:1}
+\begin{itemize}
+\item The allocation of randomisation units to the experiment is carried out independently at random with probability $q\in(0,\,1]$:
 \[
-    S_1,\ldots,S_N \quad \iidsim \quad \mathrm{Bernoulli}(q).
+    S_1,\ldots,S_M \quad \iidsim \quad \mathrm{Bernoulli}(q).
 \]
-
-\item%\label{a:2}   
+\item
 The assignment of randomisation units to the treatment group is done independently at random with probability $p\in(0,\,1)$:
 \[
-    Z_1,\ldots,Z_N \quad \iidsim \quad \mathrm{Bernoulli}(p).
+    Z_1,\ldots,Z_M \quad \iidsim \quad \mathrm{Bernoulli}(p).
 \]
-
-\item%\label{a:3}
+\item
 Allocation to the experiment and assignment to treatment are conducted independently, i.e., the indicator vectors
-$\mathbf S=(S_1,\ldots,S_N)$ and $\mathbf Z=(Z_1,\allowbreak\ldots,\allowbreak Z_N)$ are independent:
+$\mathbf S=(S_1,\ldots,S_M)$ and $\mathbf Z=(Z_1,\allowbreak\ldots,\allowbreak Z_M)$ are independent:
 \[
     \mathbf S \ind \mathbf Z.
 \]
-
 \end{itemize}
+\end{assumption}
 
-\end{enumerate}
+Somewhat differently from \cite{harshaw2023erl}, we will not maintain a linear response assumption in the strict sense. In our theory, outcomes $Y_a$, $a\in\mathcal A$, are not required to be linear functions of the exposure $\tilde H_a$ and/or the allocation coverage $G_a$; in fact, they do not even have to be measurable with respect to them. Instead, we impose a set of (jointly) weaker conditions on the \emph{conditional expectations} of the outcomes. The first of them states that the expected outcome of an analysis unit depends only on the allocation and assignment of the randomisation units it is directly connected to, and that would-be assignments of unassigned units are immaterial.
 
-Somewhat differently from \cite{harshaw2023erl}, we will not maintain a linear response assumption in the strict sense. In our theory, outcomes $Y_a$, $a\in\mathcal A$, are not required to be linear functions of exposure $H_a$ and/or allocation coverage $G_a$. In fact, they do not have to be measurable with respect to $H_a$ and $G_a$.
+\begin{assumption}\label{a:mu}
+For every analysis unit $a\in\mathcal A$, the conditional expected outcome $e_a$ defined in \eqref{eq:ea} satisfies:
+\begin{itemize}
+    \item[\textup{(i)}] \textup{(locality)} $e_a(\mathbf s,\,\mathbf z) = e_a(\mathbf s',\,\mathbf z')$ whenever $s_r=s_r'$ and $z_r=z_r'$ for all $r\in\mathcal D(a)$;
+    \item[\textup{(ii)}] \textup{(exclusion of would-be assignments)} $e_a(\mathbf s,\,\mathbf z) = e_a(\mathbf s,\,\mathbf z')$ whenever $z_r=z_r'$ for all $r\in\mathcal D(a)$ with $s_r=1$.
+\end{itemize}
+\end{assumption}
 
-Instead of assuming linear responses, we impose a set of (jointly) weaker conditions. The first of them states that ``on average'' the outcomes associated with analysis units only depend on the participation and assignment of those randomisation units that they are immediately connected to in the experiment graph.
+Part (i) rules out ``higher-order'' effects on the expected outcome that travel through the graph beyond direct connections. Figure~\ref{fig:m-structure} shows the canonical ``M-structure'' in which such an effect could arise: randomisation unit $r_3$ is not connected to analysis unit $a_1$, yet it could influence $Y_{a_1}$ indirectly---treatment of $r_3$ changes the behaviour of $a_3$, which alters the state of the shared unit $r_2$ (e.g., its price or inventory), which in turn feeds back into $a_1$'s outcome. Assumption~A\ref{a:mu}(i) asserts that such feedback loops are absent, or negligible in practice, \emph{on average}: it constrains conditional means only, not the outcomes themselves. This is a bipartite analogue of the neighbourhood-interference assumptions standard in the literature \cite{aronow2017estimating,harshaw2023erl,shi2025scalableanalysisbipartiteexperiments}, and it is weaker than requiring $Y_a$ to be a function of the treatments in $\mathcal D(a)$. Part (ii) merely says that the treatment bucket a unit \emph{would have} received, had it participated, cannot influence outcomes when the unit does not participate. Since would-be assignments are never materialised (in a hash-based system they are never even computed for non-participants), (ii) holds automatically in any physically meaningful data-generating process; we state it explicitly only because the would-be indicators $Z_r$ are formally defined for all units.
 
-%<TODO: check how this comparison reads, identify potential misunderstandings, polish>
+\begin{figure}
+\centering
+\begin{tikzpicture}[xscale=1.5, yscale=1.1,
+  aunit/.style={circle, draw, fill=black!10, inner sep=2pt, minimum size=14pt},
+  runit/.style={rectangle, draw, fill=black!25, inner sep=3pt, minimum size=12pt}]
+  \node[aunit] (a1) at (0,1) {$a_1$};
+  \node[aunit] (a2) at (1,1) {$a_2$};
+  \node[aunit] (a3) at (2,1) {$a_3$};
+  \node[runit] (r1) at (0,0) {$r_1$};
+  \node[runit] (r2) at (1,0) {$r_2$};
+  \node[runit] (r3) at (2,0) {$r_3$};
+  \draw (a1) -- (r1);
+  \draw (a1) -- (r2);
+  \draw (a3) -- (r2);
+  \draw (a3) -- (r3);
+  \draw (a2) -- (r1);
+  \draw[dashed,->,bend right=35] (r3) to (a1);
+\end{tikzpicture}
+\caption{An ``M-structure'' in the experiment graph: circles are analysis units, squares are randomisation units, solid lines are connections. A higher-order effect of $r_3$ on $Y_{a_1}$ (dashed) via $a_3$ and the shared unit $r_2$ is ruled out (on average) by Assumption~A\ref{a:mu}(i).}
+\label{fig:m-structure}
+\end{figure}
 
-\begin{enumerate}[label=\textbf{A\arabic*.},ref=\arabic*,resume]
+Under Assumption~A\ref{a:mu} the function $\mu_a$ defined in \eqref{eq:ma} admits the decomposition
+\begin{eqnarray}\label{eq:mu-decomp}
+    \mu_a(x,\,y) = \frac 1 {2^{2(M-|\mathcal D(a)|)}}\sum_{\textbf{s},\,\textbf{z}\in\{0,\,1\}^M} \Bigg( \prod_{r\in \mathcal{D}(a)} x^{s_r}(1-x)^{1-s_r} \nn\\{}\times \prod_{r\in \mathcal{D}(a)}
+    y^{z_r}(1-y)^{1-z_r}e_a(\textbf{s},\,\textbf{z})\Bigg)
+\end{eqnarray}
+for all $x,\,y\in[0,\,1]$ (where, by convention, a product over an empty set equals 1): the coordinates outside $\mathcal D(a)$ integrate out.
 
-\item\label{a:mu}
-For every analysis unit $a$, the (conditional) expected outcome $e_a$ defined in \eqref{eq:ea} only depends on the allocation and assignment indicators of those randomisation units that $a$ is connected to in the experiment graph, so the function $\mu_a$ defined in \eqref{eq:ma} admits the following decomposition,
-\begin{eqnarray*}
-    \mu_a(x,\,y) = \frac 1 {2^{2(M-|\mathcal D(a)|)}}\sum_{\textbf{s},\,\textbf{z}\in\{0,\,1\}^M} &&\Bigg( \prod_{r\in \mathcal{D}(a)} x^{s_r}(1-x)^{(1-s_r)} \\&\times& \prod_{r\in \mathcal{D}(a)}
-    y^{z_r}(1-y)^{(1-z_r)}e_a(\textbf{s},\,\textbf{z})\Bigg)
-\end{eqnarray*}
-for all $x,\,y\in[0,\,1]$ (where, by convention, the product over an empty set is equal to 1).
+The last assumption before we present our unbiasedness result specifies a linear structure for the conditional expected outcomes as functions of the allocation and assignment indicators.
 
-\end{enumerate}
-Assumption~A\ref{a:mu} rules out ``higher order'' effects on the expected outcome, such as from unit $r_3$ on $Y_1$ via $a_3$ and $r_2$ in the ``M-structure'' shown in Figure~\textbf{??}, are assumed non-existent (or, in practical sense, negligible). %<TODO: expand, discuss why this assumption is reasonable>
-
-% \subsubsection*{Form of Conditional Expected Outcomes}
-
-One last assumption before we present our unbiasedness result asserts a certain form of the conditional expected outcomes as a function of the allocation and assignment indicators. %<TODO: phrase better>
-
-\begin{enumerate}[label=\textbf{A\arabic*.},ref=\arabic*,resume]
-
-\item\label{a:4}
-% \textit{(Form of Conditional Expected Outcomes)}
-For each analysis unit $a\in\mathcal{A}$, the conditional expected outcome $e_a$ defined in \eqref{eq:ea} is linear in the contribution of different randomisation units, i.e., there exist coefficients $\beta^a_{i,\,j}\in\R$, $i=1,\,\ldots,\,M$, $j=0,1,\,2,\,3$ such that
+\begin{assumption}\label{a:4}
+For each analysis unit $a\in\mathcal{A}$, the conditional expected outcome $e_a$ defined in \eqref{eq:ea} is additive in the contributions of individual randomisation units: there exist coefficients $\beta^a_{r,\,j}\in\R$, $r=1,\,\ldots,\,M$, $j=0,\,1,\,2,\,3$, such that
 \begin{equation*}
-    e_a(\textbf{s},\,\textbf{z}) = \sum_{i=1}^M\left(\beta^a_{i,\,0}+\beta^a_{i,\,1}(1-s_i)+\beta^a_{i,\,2}s_iz_i+\beta^a_{i,\,3}s_i(1-z_i)\right)
+    e_a(\textbf{s},\,\textbf{z}) = \sum_{r=1}^M\left(\beta^a_{r,\,0}+\beta^a_{r,\,1}(1-s_r)+\beta^a_{r,\,2}s_rz_r+\beta^a_{r,\,3}s_r(1-z_r)\right)
 \end{equation*}
 for all $\textbf{s}\in\{0,\,1\}^M$ and $\textbf{z}\in\{0,\,1\}^M$.
-\end{enumerate}
-Assumption~A\ref{a:4} says that the (conditional) expected outcome of unit $a$ is a sum of contributions of randomisation units where each contribution is a quadratic function of the allocation and assignment indicator associated with the respective randomisation unit.
-Note that unassigned ($s_i=0$) and control ($s_i=1$, $z_i=0$) units are allowed to have different contributions. In other words, we do not assume that unassigned units have the same experience as control. For example, they can be freely allocated to other, non-overlapping experiments.
+\end{assumption}
+Assumption~A\ref{a:4} says that the expected outcome of unit $a$ is a sum of contributions of randomisation units, where each unit contributes one of three values depending on the group it falls into: unassigned ($\beta^a_{r,\,0}+\beta^a_{r,\,1}$), treatment ($\beta^a_{r,\,0}+\beta^a_{r,\,2}$), or control ($\beta^a_{r,\,0}+\beta^a_{r,\,3}$). Crucially, unassigned ($s_r=0$) and control ($s_r=1$, $z_r=0$) units are allowed to have \emph{different} contributions. In other words, we do not assume that unassigned units deliver the control experience: they can be freely allocated to other, non-overlapping experiments. Note also that the coefficients may vary arbitrarily across both $a$ and $r$, allowing rich effect heterogeneity, and that A\ref{a:4} restricts conditional means only. (Under A\ref{a:mu}, the coefficients $\beta^a_{r,\,j}$, $j\ge 1$, of units $r\notin\mathcal D(a)$ can be taken to be zero.)
 
-% \subsubsection*{Graph Sparsity}
-
-% Our asymptotic results (consistency and asymptotic normality of the estimator) will assume that the experiment graph is not too dense relative to the number of analysis units. The sparsity requirement differs between consistency and asymptotic normality and thus we will specify it in the conditions of the respective theorems instead of formulating here.
-
-We are finally in a position to show that the EARL estimator is unbiased.
+We are now in a position to show that the EARL estimator is unbiased.
 \begin{theorem}\label{th:unbiasedness}
-    Let the random variables $S_i\colon\Omega\mapsto\{0,\,1\}$ and $Z_i\colon\Omega\mapsto\{0,\,1\}$, $i=1,\,\ldots,\,M$, satisfy Assumptions A\ref{a:1}. Suppose the random variables $Y_a$, $a\in\mathcal A$ are integrable and Assumption~A\ref{a:mu} is true. Let the function $\mu\colon[0,\,1]\times[0,\,1]\mapsto\R$ be defined by relations \eqref{eq:ea}--\eqref{eq:mu}.
+    Let the random variables $S_r,\,Z_r\colon\Omega\mapsto\{0,\,1\}$, $r=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}. Suppose the random variables $Y_a$, $a\in\mathcal A$, are integrable and Assumption~A\ref{a:mu} is true. Let the function $\mu\colon[0,\,1]\times[0,\,1]\mapsto\R$ be defined by relations \eqref{eq:ea}--\eqref{eq:mu}.
 
-    Then 
+    Then
     \begin{itemize}
     \item[\textup{(a)}] the estimator $\hat\tau_{EARL}$ defined by \eqref{eq:earl} and the global average treatment effect (GATE) defined by \eqref{eq:gate} satisfy the following bound,
     \begin{eqnarray}\label{eq:bound}
-        \left|E[\hat\tau^{\phantom{1}}_{EARL}] - GATE\right| \le \sup_{x,\,y\in(0,\,1)}\left(\left|\frac{\partial\mu^3}{\partial x^2\partial y}(x,\,y)\right| + \left|\frac{\partial\mu^3}{\partial  x\partial y^2}(x,\,y)\right|\right),
+        \left|\E[\hat\tau^{\phantom{1}}_{EARL}] - GATE\right| \le \sup_{x,\,y\in(0,\,1)}\Bigg(\left|\frac{\partial^3\mu}{\partial x^2\partial y}(x,\,y)\right| \nn\\ {}+ \left|\frac{\partial^3\mu}{\partial  x\partial y^2}(x,\,y)\right|\Bigg),
     \end{eqnarray}
-    \item[\textup{(b)}] if, in addition, the assumption A\ref{a:4} holds true, $\hat \tau_{EARL}$ is unbiased,% i.e.,
+    \item[\textup{(b)}] if, in addition, Assumption A\ref{a:4} holds true, $\hat \tau_{EARL}$ is unbiased,
     \begin{equation}\label{eq:unbiasedness}
         \E[\hat\tau^{\phantom{1}}_{EARL}] = GATE.
     \end{equation}
     \end{itemize}
 \end{theorem}
-% \begin{proof} 
-% See Appendix~\ref{app:proofs}.
-% \end{proof}
 
-The consistency result proven below (Theorem~\ref{th:consistency}) will use an extra assumption which states that once we account for the allocation and assignment of randomisation units, there is no remaining correlation between the outcomes corresponding to different analysis units. %<TODO: explain better>
+Part (a) quantifies the bias without any linearity assumption: the estimator's expectation and the GATE are both values of the mixed derivative $\partial^2\mu/\partial x\partial y$ at (possibly different) interior points, so the bias is controlled by the third derivatives of $\mu$---a measure of non-linearity of the response surface. Under the additive-contributions model these third derivatives vanish identically, giving part (b).
 
-\begin{enumerate}[label=\textbf{A\arabic*.},ref=\arabic*,resume]
+The consistency result proven below (Theorem~\ref{th:consistency}) uses an extra assumption which states that, once we condition on the allocation and assignment of the randomisation units, no systematic co-movement remains between the outcomes of different analysis units: all cross-unit dependence is channelled through $(\mathbf S,\,\mathbf Z)$.
 
-\item\label{a:no-autocorrelation} Any systematic relationship between outcomes is fully explained by the allocation and assignment of the randomisation units, i.e., conditional on $(\mathbf S,\,\mathbf Z)$, the errors 
+\begin{assumption}\label{a:no-autocorrelation} Conditional on $(\mathbf S,\,\mathbf Z)$, the errors
 \begin{equation}\label{def:epsa}
     \varepsilon_a = Y_a - e_a(\mathbf{S},\,\mathbf{Z}),\qquad a\in\mathcal{A},
 \end{equation}
-are not correlated:
+are uncorrelated:
 \begin{equation*}
-    E[\varepsilon_a \varepsilon_{a'}\mid \mathbf{S},\,\mathbf{Z}] = E[\varepsilon_a\mid \mathbf{S},\,\mathbf{Z}] \cdot E[\varepsilon_{a'}\mid \mathbf{S},\,\mathbf{Z}]\qquad \forall\,a,\,a'\in\mathcal{A}.
+    \E[\varepsilon_a \varepsilon_{a'}\mid \mathbf{S},\,\mathbf{Z}] = \E[\varepsilon_a\mid \mathbf{S},\,\mathbf{Z}] \cdot \E[\varepsilon_{a'}\mid \mathbf{S},\,\mathbf{Z}]\quad \forall\,a\neq a'\in\mathcal{A}.
 \end{equation*}
-\end{enumerate}
+\end{assumption}
 
 The next theorem demonstrates that EARL is consistent as long as the experiment graph is not too dense.
 \begin{theorem}\label{th:consistency}
-    Let the random variables $S_i\colon\Omega\mapsto\{0,\,1\}$ and $Z_i\colon\Omega\mapsto\{0,\,1\}$, $i=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}. Suppose there exists $L>0$ such that $E[Y_a^2] \le L$ for all $a\in\mathcal A$ (uniformly across all values of $N$). Let Assumptions~A\ref{a:mu}, A\ref{a:4}, and A\ref{a:no-autocorrelation} hold true.
+    Let the random variables $S_r,\,Z_r\colon\Omega\mapsto\{0,\,1\}$, $r=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}. Suppose there exists $L>0$ such that $\E[Y_a^2] \le L$ for all $a\in\mathcal A$ (uniformly across all values of $N$). Let Assumptions~A\ref{a:mu}, A\ref{a:4}, and A\ref{a:no-autocorrelation} hold true.
 
-    Then, if $d^{\phantom{1}}_{\mathcal{R}}d^5_{\mathcal{A}}=o(N)$, the EARL estimator defined in \eqref{eq:earl} is consistent for GATE \eqref{eq:gate},
+    Then, if $d^{\phantom{1}}_{\mathcal{R}}d^3_{\mathcal{A}}=o(N)$, the EARL estimator defined in \eqref{eq:earl} is consistent for GATE \eqref{eq:gate},
     \begin{equation*}
         \hat\tau^{\phantom{1}}_{EARL} \stackrel{p}{\to} GATE\qquad \textup{as }N\to\infty.
     \end{equation*}
 \end{theorem}
 
+The sparsity requirement $d_{\mathcal R}^{\phantom{1}}d_{\mathcal A}^3=o(N)$ coincides with the corresponding condition for the full-assignment ERL estimator \cite[Theorem~4.2]{harshaw2023erl}: partial assignment affects only the constants in the mean-squared-error bound (through the factor $q^{-1}$ in the weights), not the admissible graph-density regime.
+
 \subsection{Inference}\label{subsec:inference}
-In this section, we prove the asymptotic normality of the EARL estimator and devise estimators for its asymptotic variance. This enables statistical testing based on the EARL estimator.
+In this section, we prove the asymptotic normality of the EARL estimator and devise estimators for its asymptotic variance. This enables statistical testing and confidence intervals based on the EARL estimator.
 
 \subsubsection{Asymptotic Normality}
 
-To prove asymptotic normality we would have to replace Assumption A~\ref{a:no-autocorrelation} with a stronger condition, requiring that the errors $\varepsilon_a$, $a\in\mathcal A$, defined in \eqref{def:epsa} are independent across observations and from allocation and assignment indicators.
+To prove asymptotic normality we replace Assumption A\ref{a:no-autocorrelation} with a stronger condition, requiring that the errors $\varepsilon_a$, $a\in\mathcal A$, defined in \eqref{def:epsa} are independent across observations and from the allocation and assignment indicators.
 
-\begin{enumerate}[resume]
-
-\item[\textbf{A\ref{a:no-autocorrelation}$^*$}]
+\begin{assumptionstar}{A\ref{a:no-autocorrelation}$^*$}
 The errors $\{\varepsilon_a\}_{a\in\mathcal A}$, allocation indicators $\mathbf S$, and assignment indicators $\mathbf Z$ are jointly independent.
-\end{enumerate}
+\end{assumptionstar}
 
-% \subsubsection*{Asymptotic Non-Degeneracy}
+The proof of asymptotic normality also relies on the following (and last) assumption of this subsection. It rules out practically irrelevant edge cases in which the GATE can be estimated at a faster than parametric rate. See the discussion in \cite[p.~475]{harshaw2023erl} for specific scenarios that are excluded by this condition.
 
-The proof of asymptotic normality will also rely on the following (and last) assumption. It rules out practically irrelevant edge cases in which the GATE can be estimated at a higher than parametric rate. See the discussion in \cite[p.475]{harshaw2023erl} for specific scenarios that are excluded by this condition.
-
-
-\begin{enumerate}[label=\textbf{A\arabic*.},ref=\arabic*,resume]
-
-\item\label{a:non-degeneracy} \textit{(Asymptotic Non-Degeneracy)} The normalised variance of the EARL estimator is bounded away from zero, i.e., there exists $\delta >0$ such that $N\cdot\textup{var}(\hat\tau_{EARL}) > \delta$ for all sufficiently large $N$.
-
-\end{enumerate}
+\begin{assumption}\label{a:non-degeneracy} \textit{(Asymptotic Non-Degeneracy)} The normalised variance of the EARL estimator is bounded away from zero, i.e., there exists $\delta >0$ such that $N\cdot\var(\hat\tau_{EARL}) > \delta$ for all sufficiently large $N$.
+\end{assumption}
 
 \begin{theorem}\label{th:asymptotic-normality}
-    Let the random variables $S_i\colon\Omega\mapsto\{0,\,1\}$ and $Z_i\colon\Omega\mapsto\{0,\,1\}$, $i=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}. Suppose there exists $L>0$ such that $E[Y_a^4] \le L$ for all $a\in\mathcal A$ (uniformly across all values of $N$) and Assumptions~A\ref{a:mu}, A\ref{a:4}, A\ref{a:no-autocorrelation}$^*$, and A\ref{a:non-degeneracy} are true.
+    Let the random variables $S_r,\,Z_r\colon\Omega\mapsto\{0,\,1\}$, $r=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}. Suppose there exists $L>0$ such that $\E[Y_a^4] \le L$ for all $a\in\mathcal A$ (uniformly across all values of $N$) and Assumptions~A\ref{a:mu}, A\ref{a:4}, A\ref{a:no-autocorrelation}$^*$, and A\ref{a:non-degeneracy} are true.
 
-    Then, if $d^{4}_{\mathcal{R}}d^{16}_{\mathcal{A}}=o(N)$, the EARL estimator defined in \eqref{eq:earl} is asymptotically normal,
+    Then, if $d^{4}_{\mathcal{R}}d^{10}_{\mathcal{A}}=o(N)$, the EARL estimator defined in \eqref{eq:earl} is asymptotically normal,
     \begin{equation*}
-        \frac{\hat\tau^{\phantom{1}}_{EARL} - GATE}{\sqrt{\textup{var}\left(\hat\tau^{\phantom{1}}_{EARL}\right)}}\stackrel{d}{\to} \mathcal{N}(0,\,1)\qquad \textup{as }N\to\infty.
+        \frac{\hat\tau^{\phantom{1}}_{EARL} - GATE}{\sqrt{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}}\stackrel{d}{\to} \mathcal{N}(0,\,1)\qquad \textup{as }N\to\infty.
     \end{equation*}
 \end{theorem}
 
-\subsubsection{Asymptotic Variance Estimation}
-An estimator of the asymptotic variance of $\hat\tau^{\phantom{1}}_{EARL}$ can be constructed similarly to \cite[Section 5.1]{harshaw2023erl}. For that purpose, we will need a stronger version of Assumption~A\ref{a:4}.
+\subsubsection{Asymptotic Variance Estimation}\label{subsubsec:variance}
+An estimator of the asymptotic variance of $\hat\tau^{\phantom{1}}_{EARL}$ can be constructed similarly to \cite[Section 5.1]{harshaw2023erl}. For that purpose, we will need a stronger version of Assumption~A\ref{a:4} under which the contributions of the randomisation units connected to a given analysis unit are homogeneous. Define the \emph{joint coverage--exposure} of unit $a$,
+\begin{equation}\label{eq:Fa}
+    F_a = \frac{1}{|\mathcal{D}(a)|}\sum_{r\in\mathcal{D}(a)} S_rZ_r = G_a\tilde H_a,
+\end{equation}
+the share of $a$'s connections that participate \emph{and} are treated (with $F_a=G_a=0$ if $\mathcal D(a)=\emptyset$).
 
-\begin{enumerate}[resume]
-
-\item[\textbf{A\ref{a:4}$^*$}]\label{a:ea=*}
-The conditional expected outcome $e_a$ \eqref{eq:ea} of each analysis unit $a\in\mathcal A$ is a linear function of the allocation coverage $G(a)$, and the product of this coverage and exposure, i.e., for every $a\in\mathcal A$ there exist $B^a_j\in\R$, $j=0,\,1,\,2$ such that
-
+\begin{assumptionstar}{A\ref{a:4}$^*$}
+For every $a\in\mathcal A$ there exist $B^a_j\in\R$, $j=0,\,1,\,2$, such that
 \begin{equation*}
-    e_a(\mathbf s,\,\mathbf z) = B^a_0 + B^a_1 \cdot G(a) + B^a_2 \cdot G(a) H(a).
+    e_a(\mathbf s,\,\mathbf z) = B^a_0 + B^a_1 \, G_a + B^a_2 \, F_a ,
 \end{equation*}
+where $G_a$ and $F_a$ are evaluated at $(\mathbf s,\,\mathbf z)$.
+\end{assumptionstar}
 
-\end{enumerate}
+Assumption~A\ref{a:4}$^*$ is exactly the special case of Assumption~A\ref{a:4} in which the coefficients $\beta^a_{r,\,j}$ do not vary with $r$ within $\mathcal D(a)$ (and vanish outside), so it implies Assumptions~A\ref{a:mu} and~A\ref{a:4}; under it, $\mu_a(x,\,y) = B_0^a + B_1^ax + B_2^axy$ and the unit-level effect is $\gamma_a := \mu_a(1,\,1)-\mu_a(1,\,0) = B_2^a$.
 
-Under Assumption~A\ref{a:ea=*} we can construct the weights $R_{a_1,\,a_2}$ as
-%<TODO: define R in an analogy to https://arxiv.org/abs/2103.06392 but adapted to the form of e_a in Assumption A\ref{a:ea=*} above>
-and estimate the asymptotic variance as
-\begin{equation*}\label{def:hat-V}
+Let $\phi_a$ denote the EARL weight of unit $a$,
+\begin{equation}\label{def:phi}
+    \phi_a(\mathbf S,\,\mathbf Z) = \sum_{r\in\mathcal D(a)}\frac{S_r}{q}\cdot\frac{Z_r - p}{p(1-p)},
+\end{equation}
+so that $\hat\tau^{\phantom{1}}_{EARL} = N^{-1}\sum_{a\in\mathcal A}\phi_a(\mathbf S,\,\mathbf Z)Y_a$, and write $\hat\gamma_a = \phi_aY_a$ for the unit-level estimate. The variance of EARL decomposes into pairwise covariances, $\var(\hat\tau_{EARL}) = N^{-2}\sum_{a_1,a_2}\cov(\hat\gamma_{a_1},\hat\gamma_{a_2})$, and we estimate each covariance by a weighted product of the observed outcomes, $Y_{a_1}Y_{a_2}R_{a_1,a_2}$. Denote by
+$$
+\mathcal P = \{(a_1,\,a_2)\in\mathcal A^2\colon \mathcal D(a_1)\cap\mathcal D(a_2)\neq\emptyset\}
+$$
+the set of \emph{overlapping} pairs (including the diagonal). The weights $R_{a_1,\,a_2}$ are constructed as follows.
+\begin{itemize}
+    \item If $(a_1,\,a_2)\notin\mathcal P$, set $R_{a_1,\,a_2}=0$ (such pairs have zero covariance).
+    \item If $(a_1,\,a_2)\in\mathcal P$ and $a_1\neq a_2$, let $\mathbf m_{a_1,a_2}$ be the vector of the $8$ monomials
+    \begin{equation*}
+        (G_{a_1},\,F_{a_1},\,G_{a_2},\,F_{a_2},\,G_{a_1}G_{a_2},\,G_{a_1}F_{a_2},\,F_{a_1}G_{a_2},\,F_{a_1}F_{a_2}),
+    \end{equation*}
+    let $\Sigma_{a_1,a_2}$ be its $8\times 8$ covariance matrix under the design, and let $\mathbf c_{a_1,a_2} = \Sigma^{-1}_{a_1,a_2}\mathbf u$, where $\mathbf u$ is the coordinate vector selecting $F_{a_1}F_{a_2}$. Set
+    \begin{equation}\label{def:R}
+        R_{a_1,\,a_2} = \phi_{a_1}\phi_{a_2} - \mathbf c_{a_1,a_2}^{\top}\left(\mathbf m_{a_1,a_2} - \E[\mathbf m_{a_1,a_2}]\right).
+    \end{equation}
+    \item If $a_1=a_2=a$, apply the same construction with the $5$-dimen\-sional monomial vector $\mathbf m_{a,a} = (G_a,\,F_a,\,G_a^2,\,G_aF_a,\,F_a^2)$ and $\mathbf u$ selecting $F_a^2$:
+    $R_{a,\,a} = \phi_{a}^2 - \mathbf c_{a,a}^{\top}(\mathbf m_{a,a} - \E[\mathbf m_{a,a}])$.
+\end{itemize}
+The rationale mirrors \cite[Section~5.1]{harshaw2023erl}: the first term of $R_{a_1,a_2}$ makes $Y_{a_1}Y_{a_2}\phi_{a_1}\phi_{a_2}$ an (automatically unbiased) estimator of $\E[\hat\gamma_{a_1}\hat\gamma_{a_2}]$, while the linear-in-monomials term is calibrated so that $Y_{a_1}Y_{a_2}\,\mathbf c^{\top}(\mathbf m-\E[\mathbf m])$ is an unbiased estimator of the product $\gamma_{a_1}\gamma_{a_2}=\E[\hat\gamma_{a_1}]\E[\hat\gamma_{a_2}]$ for \emph{all} values of the coefficients $B^a_j$; subtracting the two yields an unbiased estimator of the covariance. All the moments entering $\E[\mathbf m_{a_1,a_2}]$ and $\Sigma_{a_1,a_2}$ are polynomials in $p$, $q$ determined by $|\mathcal D(a_1)|$, $|\mathcal D(a_2)|$, and $|\mathcal D(a_1)\cap\mathcal D(a_2)|$; they can be computed in closed form before the experiment or estimated by Monte Carlo \cite{fattorini2006applying}. Note that only pairs in $\mathcal P$ require any computation, so the estimator scales with the number of overlapping pairs (at most $Nd_{\mathcal A}d_{\mathcal R}$) rather than $N^2$.
+
+The construction requires the matrices $\Sigma_{a_1,a_2}$ to be invertible, which we assume in a uniform manner.
+
+\begin{assumption}\label{a:lambda0}
+    There exists $\lambda_0>0$, independent of $N$, such that for every pair $(a_1,\,a_2)\in\mathcal P$ the smallest eigenvalue of $\Sigma_{a_1,a_2}$ is at least $\lambda_0$.
+\end{assumption}
+
+Assumption~A\ref{a:lambda0} is the analogue of the non-degenerate-exposures condition of \cite[Assumption~4]{harshaw2023erl} and, like it, can be verified by the experimenter before the experiment, since $\Sigma_{a_1,a_2}$ depends only on the design. It fails, for example, for analysis units with a single connection or for pairs with identical connection sets; for such pairs the corresponding covariance terms can be replaced by conservative upper bounds exactly as in \cite[Proposition~5.2]{harshaw2023erl}, preserving asymptotic validity as long as $o(N)$ units are affected. We omit the routine details.
+
+Given the weights, the variance estimator is
+\begin{equation}\label{def:hat-V}
     \hat V = \frac 1 {N^2} \sum_{a_1\in\mathcal A}\sum_{a_2\in\mathcal A} Y_{a_1}Y_{a_2}R_{a_1,\,a_2}.
-\end{equation*}
+\end{equation}
 
-The following Theorem demonstrates that $\hat V$ can be used to perform inference based on $\hat\tau_{EARL}^{\phantom{1}}$.
+The following theorem demonstrates that $\hat V$ is exactly unbiased and can be used to perform inference based on $\hat\tau_{EARL}^{\phantom{1}}$.
 
 \begin{theorem}\label{th:asymptotic-variance}
-    Under the assumptions of Theorem~\ref{th:asymptotic-normality}, let $d^{4}_{\mathcal{R}}d^{16}_{\mathcal{A}}=o(N)$ and suppose that Assumption~A\ref{a:ea=*} holds. Let the asymptotic variance estimator $\hat V$ be defined by \eqref{def:hat-V}.
-    
-    Then $\hat V / \textup{var}\left(\hat\tau^{\phantom{1}}_{EARL}\right)\stackrel{p}{\to} 1$ as $N$ goes to infinity and
+    Let the assumptions of Theorem~\ref{th:asymptotic-normality} hold with Assumption~A\ref{a:4}$^*$ in place of Assumptions~A\ref{a:mu} and A\ref{a:4} (in particular, $d^{4}_{\mathcal{R}}d^{10}_{\mathcal{A}}=o(N)$ and $\E[Y_a^4]\le L$), and let Assumption~A\ref{a:lambda0} hold. Let the variance estimator $\hat V$ be defined by \eqref{def:R}--\eqref{def:hat-V}.
+
+    Then $\E[\hat V] = \var(\hat\tau^{\phantom{1}}_{EARL})$ for every $N$, $\hat V / \var(\hat\tau^{\phantom{1}}_{EARL})\stackrel{p}{\to} 1$ as $N\to\infty$, and
     $$
         \frac{\hat\tau^{\phantom{1}}_{EARL} - GATE}{\sqrt{\hat V}} \stackrel{d}{\to} \mathcal N(0,\,1).
     $$
 \end{theorem}
-\begin{proof}
-    %<TODO: write a proof of this theorem using the style and language of the other proofs; strictly use only those assumptions that appear in the condition of the theorem; use the moment condition instead of the boundedness of outcomes> 
-\end{proof}
 
-\subsubsection{Randomisation Inference}
+\subsubsection{Randomisation Inference}\label{subsubsec:ri}
 
-An additional variance estimator is available under the following stronger version of the null hypothesis (and if the outcome variables are bounded).
-
+An additional, computationally simpler variance estimator is available under a stronger null hypothesis (and if the outcome variables are bounded). Specifically, consider
 \begin{equation}\label{def:strong-null}
-    H_0^*\colon\qquad \mu_a(1,\,1) - \mu_a(1,0)\quad \forall\,a\in\mathcal A
+    H_0^*\colon\qquad e_a(\mathbf s,\,\mathbf z)\ \textup{does not depend on }(\mathbf s,\,\mathbf z),\quad \forall\,a\in\mathcal A.
 \end{equation}
+The null $H_0^*$ states that neither the assignment \emph{nor the allocation} of any randomisation unit affects the expected outcome of any analysis unit. It implies the pointwise null of zero expected effects, $\mu_a(1,\,1)-\mu_a(1,\,0)=0$ for all $a$, but is stronger. The strengthening is not incidental---it is necessitated by partial assignment. Under a concurrent experiment, the outcomes may co-vary with the allocation indicators $\mathbf S$ even when our treatment has no effect (unassigned units deliver a different experience); a re-randomisation procedure regenerates $(\mathbf S,\,\mathbf Z)$ independently of the observed outcomes and therefore destroys precisely this co-variation, so it can only reproduce the sampling variance when no such co-variation exists. We demonstrate this effect numerically in Section~\ref{sec:simulations}. On the other hand, $H_0^*$ remains weaker than the sharp (Fisher) null employed by \cite{shi2025scalableanalysisbipartiteexperiments}, which requires the outcomes themselves, rather than their conditional means, to be unaffected by $(\mathbf S,\,\mathbf Z)$.
 
-This stronger null states that the expected treatment effect is zero for every analysis unit. When this is true, one can obtain a consistent estimator of the asymptotic variance using the randomisation inference methodology recently proposed in \cite[Section~4]{shi2025scalableanalysisbipartiteexperiments}. This methodology consists of re-randomising the allocation and assignment indicators, forming $J$ independent samples,
+The randomisation-inference methodology follows \cite[Section~4]{shi2025scalableanalysisbipartiteexperiments}: we re-randomise the allocation and assignment indicators, forming $J$ independent samples,
 \begin{equation}\label{def:S-Z-samples}
     \begin{array}{c}
-        \tilde{\mathbf{S}}_j = \tilde S_{1,\,j},\ldots,\tilde S_{N,\,j} \quad \iidsim \quad \mathrm{Bernoulli}(q),\\
-        \tilde{\mathbf Z}_j = \tilde Z_{1,\,j},\ldots,\tilde Z_{N,\,j} \quad \iidsim \quad \mathrm{Bernoulli}(p),\\
+        \tilde{\mathbf{S}}_j = (\tilde S_{1,\,j},\ldots,\tilde S_{M,\,j}) \quad \iidsim \quad \mathrm{Bernoulli}(q),\\
+        \tilde{\mathbf Z}_j = (\tilde Z_{1,\,j},\ldots,\tilde Z_{M,\,j}) \quad \iidsim \quad \mathrm{Bernoulli}(p),\\
         \tilde{\mathbf{S}}_j\ind \tilde{\mathbf Z}_j,
-    \end{array}\qquad j=1,\,\ldots,\,J.
+    \end{array}\qquad j=1,\,\ldots,\,J,
 \end{equation}
-Let $\phi_a\colon\{0,\,1\}^M\times\{0,\,1\}^M\mapsto\R$ be the function taking the allocation and assignment indicators and producing the weight of $Y_a$ in the EARL estimator, i.e.,
-\begin{equation*}
-    \phi_a(\mathbf S,\,\mathbf Z) = \frac{\sum_{r\in\mathcal D(a)}S_r/|\mathcal D(a)|-q}{q(1-q)}\cdot\frac{\sum_{r\in\mathcal D(a)}Z_r/|\mathcal D(a)|-p}{p(1-p)}
-\end{equation*}
-and, in particular, $\hat\tau^{\phantom{1}}_{EARL} = N^{-1}\sum_{a\in\mathcal A}\phi_a(\mathbf S,\,\mathbf Z)Y_a$.
-Furthermore, let $\hat\tau^{\phantom{1}}_{EARL}(\tilde {\mathbf S}_j,\,\tilde{\mathbf Z}_j)$ be the EARL estimator computed using the $j$-th generated sample of allocation and assignment indicators, i.e.,
+drawn independently of the experimental data. Let $\hat\tau^{\phantom{1}}_{EARL}(\tilde {\mathbf S}_j,\,\tilde{\mathbf Z}_j)$ be the EARL estimator computed using the $j$-th generated sample of allocation and assignment indicators with the weight function \eqref{def:phi}, i.e.,
 $$
     \hat\tau^{\phantom{1}}_{EARL}(\tilde {\mathbf S}_j,\,\tilde{\mathbf Z}_j) = \frac 1 N \sum_{a\in\mathcal{A}}\phi_a(\tilde {\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_a,\qquad j=1,\,\ldots,\,J.
 $$
-Note that these ``copies'' of the estimator are still computed using the same observed outcomes $Y_a$ and only the allocation and assignment indicators are replaced with the generated (re-randomised) values.
+Note that these ``copies'' of the estimator are still computed using the same observed outcomes $Y_a$; only the allocation and assignment indicators are replaced with the re-randomised values.
 
-Using the above notation the randomisation-inference estimator of the asymptotic variance of $\hat\tau^{\phantom{1}}_{EARL}$ can be written as 
+Using the above notation, the randomisation-inference estimator of the variance of $\hat\tau^{\phantom{1}}_{EARL}$ is the empirical variance of the copies,
 \begin{equation}\label{def:hatV}
-    \hat V_{RI} = \frac{1}{J} \sum_{j=1}^J\left(\hat\tau^{\phantom{1}}_{EARL}(\tilde {\mathbf S}_j,\,\tilde{\mathbf Z}_j)-J^{-1}\sum_{j'=1}^J\hat\tau^{\phantom{1}}_{EARL}(\tilde {\mathbf S}_{j'},\,\tilde{\mathbf Z}_{j'})\right)^2.
+    \hat V_{RI} = \frac{1}{J} \sum_{j=1}^J\left(\hat\tau^{\phantom{1}}_{EARL}(\tilde {\mathbf S}_j,\,\tilde{\mathbf Z}_j)-\frac 1 J\sum_{j'=1}^J\hat\tau^{\phantom{1}}_{EARL}(\tilde {\mathbf S}_{j'},\,\tilde{\mathbf Z}_{j'})\right)^2.
 \end{equation}
-We complete our theoretical section with a theorem demonstrating that $\hat V_{RI}$ can be used to perform significance testing based on $\hat\tau^{\phantom{1}}_{EARL}$.
-% Staying in a close analogy with \cite[Section~A.1]{shi2025scalableanalysisbipartiteexperiments}, we prove the following
+We complete our theoretical development with a theorem demonstrating that $\hat V_{RI}$ can be used for significance testing based on $\hat\tau^{\phantom{1}}_{EARL}$. As noted in Section~\ref{sec:literature}, the validity proof for the analogous full-assignment procedure in \cite{shi2025scalableanalysisbipartiteexperiments} was found to be flawed; the proof below (in Appendix~\ref{app:ri}) is self-contained and, we believe, of independent interest for the $q=1$ case as well.
 
 \begin{theorem}\label{th:randomisation-inference}
-    Under the assumptions of Theorem~\ref{th:asymptotic-normality}, let $d^{4}_{\mathcal{R}}d^{16}_{\mathcal{A}}=o(N)$ and the asymptotic variance estimator $\hat V_{RI}$ be defined by \eqref{def:S-Z-samples}--\eqref{def:hatV}.
-    
-    Then, if the strong null \eqref{def:strong-null} holds true, $\hat V_{RI} / \textup{var}\left(\hat\tau^{\phantom{1}}_{EARL}\right)\stackrel{p}{\to} 1$ as $N$ goes to infinity and
-    for any $\alpha\in(0,\,1)$ we have that
+    Let Assumptions A\ref{a:1}, A\ref{a:mu}, A\ref{a:no-autocorrelation}$^*$, and A\ref{a:non-degeneracy} hold, and suppose the outcomes are uniformly bounded: there exists $C_Y$ with $|Y_a|\le C_Y$ almost surely for all $a$ and $N$. Let the strong null \eqref{def:strong-null} hold true, let $d^{4}_{\mathcal{R}}d^{10}_{\mathcal{A}}=o(N)$, and let the number of re-randomisations $J=J_N$ grow so that $d^{6}_{\mathcal{A}}d^{2}_{\mathcal{R}}=o(J_N)$. Let $\hat V_{RI}$ be defined by \eqref{def:S-Z-samples}--\eqref{def:hatV}.
+
+    Then $\hat V_{RI} / \var(\hat\tau^{\phantom{1}}_{EARL})\stackrel{p}{\to} 1$ as $N\to\infty$, and
+    for any $\alpha\in(0,\,1)$,
     \begin{equation*}
         \Pr\left\{\left|\hat\tau^{\phantom{1}}_{EARL}\right| > z_{1-\alpha/2}\sqrt{\hat V_{RI}}\right\}\to \alpha \qquad \textup{as }N\to\infty,
     \end{equation*}
-     where $z_{1-\alpha/2}$ is the quantile of the standard normal distribution of level $1-\alpha/2$.
+    where $z_{1-\alpha/2}$ is the quantile of the standard normal distribution of level $1-\alpha/2$.
 \end{theorem}
 
 \section{Simulation Study}\label{sec:simulations}
-%<TODO: conduct a semi-synthetic simulation study and document its results in this section. Here is further guidance:
-% - identify two or more open datasets to use for the experiment by looking at the datasets used in the key papers on bi-partite experimentation (such as https://arxiv.org/abs/2010.02108 and https://arxiv.org/abs/2103.06392
-% - try to stay close to those papers in the design of the simulation experiments (inclusive of the methods' evaluation) but generate the data with a partial assignment varying $q$ from 10% to 100%
-% - include the following benchmarks: ERL applied to only participating units (i.e., after dropping the non-participating randomisation units from the graph), IPW benchmarks (suitably adapted to the partial assignment case, see this work https://arxiv.org/abs/2511.11564 and also consider an IPW estimator in which the weights would account for both participation and assignment probabilities)
-% - report metrics that are used to evaluate estimators in such settings (e.g., RMSE)
-% - be careful with phrasing to avoid critisim on the grounds of "only validating in simulations"
-% - ensure reproducibility, provide a readme with steps to reproduce the results
-% - ensure the code is clean and readable, include minimal code documentaion in the readme; avoid excessive commenting
-% - add the code to the private repository with the paper; we will *later* copy it to a separate repository, anonymise that repository, open it, and reference in the paper>
 
-\bibliographystyle{plain}
-\bibliography{references.bib}
+We evaluate EARL in a semi-synthetic simulation study designed to stay close to the empirical evaluations of \citet{doudchenko2020causal} and \citet{harshaw2023erl}, while introducing partial assignment with allocation rates $q$ ranging from 10\% to 100\%. The full code, together with instructions reproducing every number and figure in this section, accompanies the paper.\footnote{The code is included in the supplementary material and will be released in an anonymised public repository.} As in any simulation-based evaluation, the data-generating processes are necessarily stylised; we mitigate this in two ways---by building the experiment graphs from real datasets whose degree distributions are far from any convenient parametric form, and by including scenarios that \emph{violate} our assumptions---but the results should be read as controlled evidence about estimator behaviour with a known ground truth, which real experiments cannot provide, rather than as a substitute for field validation.
 
-\section*{Appendix}
+\subsection{Setup}\label{subsec:sim-setup}
+
+\textbf{Graphs.} We use three bipartite graphs (Table~\ref{tab:graphs}). \emph{Synthetic}: the design of \cite[Section~6.1]{doudchenko2020causal}: $N=1000$ analysis units, $M=100$ randomisation units, each analysis unit connected to $m_a\sim U\{1,\ldots,10\}$ randomisation units chosen at random. \emph{Amazon}: the user--item graph built from the Amazon product-review data of \citet{he2016ups,mcauley2015image}, subsampling $N=1000$ users with between 2 and 50 reviews as in \cite[Section~6.2]{doudchenko2020causal}; items are randomisation units, mirroring an experiment that changes an item-level mechanism (e.g., pricing) and measures customer satisfaction \cite{harshaw2023erl}. \emph{MovieLens}: the full MovieLens-100K user--movie graph \cite{harper2015movielens}, a deliberately dense stress case ($d_{\mathcal A}=737$) far outside our sparsity conditions.
+
+\begin{table}
+\caption{Experiment graphs used in the simulation study.}
+\label{tab:graphs}
+\begin{tabular}{lrrrrr}
+\toprule
+Graph & $N$ & $M$ & $|\mathcal C|$ & $d_{\mathcal A}$ & $d_{\mathcal R}$\\
+\midrule
+Synthetic & 1000 & 100 & 5415 & 10 & 76\\
+Amazon & 1000 & 2718 & 3273 & 42 & 18\\
+MovieLens & 943 & 1682 & 100000 & 737 & 583\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Outcome models.} Outcomes follow $Y_a = e_a + \varepsilon_a$ with $\varepsilon_a\iidsiminline\mathcal N(0,\,0.5)$ as in \cite{doudchenko2020causal} and
+\begin{equation*}
+    e_a = \alpha_a + \beta_a F_a + \gamma_u (1-G_a),
+\end{equation*}
+where $F_a$ is the joint coverage--exposure \eqref{eq:Fa} and the term $\gamma_u(1-G_a)$ captures the effect of unassigned connections (e.g., their participation in a concurrent experiment). The GATE equals $N^{-1}\sum_a\beta_a$. Following \cite[Section~8]{harshaw2023erl}, coefficients are drawn once and then held fixed across replications: \emph{S1} (positive heterogeneous effects) $\alpha_a\sim\mathcal N(-1,\,3/8)$, $\beta_a\sim\mathcal N(2,\,1)$; \emph{S2} (near-zero effects) $\alpha_a\sim\mathcal N(2,\,3/8)$, $\beta_a\sim\mathcal N(0,\,1/2)$; \emph{S3} (non-linear response, violating A\ref{a:4}) $e_a = \alpha_a + 4F_a(F_a-1)+\gamma_u(1-G_a)$ with $\alpha_a\sim\mathcal N(0,\,1/8)$ and $GATE=0$. Each scenario is run with $\gamma_u=1$ (unassigned units carry a concurrent-test effect), and S1 and S2 also with $\gamma_u=0$ (unassigned units deliver the control experience).
+
+\textbf{Estimators.} We compare: \emph{EARL} \eqref{eq:earl}; \emph{EARL-centred}, the product-of-standardised-weights variant discussed after Proposition~\ref{prop:optimality}; \emph{ERL-drop} \eqref{eq:erl-drop}, the standard ERL on the reduced graph; \emph{IPW-assign}, the Horvitz--Thompson full-/empty-exposure contrast \cite{aronow2017estimating,zigler2021bipartite} computed on the reduced graph with assignment-only propensities $p^{k_a}$, $(1-p)^{k_a}$ ($k_a$ the number of participating connections); and \emph{IPW-alloc}, the same contrast on the full graph with propensities accounting for both allocation and assignment, $(qp)^{|\mathcal D(a)|}$ and $(q(1-p))^{|\mathcal D(a)|}$, in the spirit of the eligibility-aware propensities of \cite{tan2025estimating}. For each graph, scenario, and $q\in\{0.1,\,0.2,\ldots,\,1.0\}$ we run 1000 replications with $p=1/2$ and report the bias, the standard deviation, and the root mean squared error (RMSE) of each estimator.
+
+\subsection{Results}\label{subsec:sim-results}
+
+\begin{figure*}
+\centering
+\includegraphics[width=\textwidth]{figures/fig_rmse_bias.pdf}
+\caption{RMSE (top, log scale) and bias (bottom) as functions of the allocation rate $q$ in scenario S1 ($\gamma_u=1$). EARL is unbiased everywhere and has the lowest RMSE at almost every allocation rate; ERL-drop has bias $-(1-q)\cdot GATE$ (dotted reference line); the IPW benchmarks are erratic (Synthetic, Amazon) or degenerate to a constant (IPW-alloc on MovieLens, where a pure exposure is never observed); EARL-centred pays a large variance penalty that grows with graph density. At $q=1$, EARL, EARL-centred, and ERL-drop all coincide with the standard ERL estimator.}
+\label{fig:rmse-bias}
+\end{figure*}
+
+\begin{table*}
+\caption{RMSE (with bias in parentheses) at allocation rates $q\in\{0.2,\,0.5,\,0.8\}$, scenario S1 with a concurrent-test effect on unassigned units ($\gamma_u=1$); 1000 replications, $p=0.5$. Best RMSE per column in bold. GATE $\approx 2.0$ in all three graphs.}
+\label{tab:rmse}
+\centering
+\small
+\begin{tabular}{llccccccccc}
+\toprule
+& & \multicolumn{3}{c}{Synthetic} & \multicolumn{3}{c}{Amazon} & \multicolumn{3}{c}{MovieLens}\\
+\cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}
+Estimator & & $q=0.2$ & $q=0.5$ & $q=0.8$ & $q=0.2$ & $q=0.5$ & $q=0.8$ & $q=0.2$ & $q=0.5$ & $q=0.8$\\
+\midrule
+EARL & & \textbf{0.53} {\scriptsize$(-0.00)$} & \textbf{0.32} {\scriptsize$(-0.01)$} & \textbf{0.23} {\scriptsize$(-0.01)$} & \textbf{0.28} {\scriptsize$(-0.01)$} & \textbf{0.19} {\scriptsize$(-0.00)$} & \textbf{0.16} {\scriptsize$(-0.00)$} & \textbf{1.44} {\scriptsize$(-0.03)$} & \textbf{1.07} {\scriptsize$(-0.00)$} & 0.89 {\scriptsize$(-0.01)$}\\
+EARL-centred & & 1.28 {\scriptsize$(+0.01)$} & 1.41 {\scriptsize$(+0.03)$} & 2.13 {\scriptsize$(+0.03)$} & 0.77 {\scriptsize$(+0.02)$} & 0.67 {\scriptsize$(-0.01)$} & 0.79 {\scriptsize$(+0.03)$} & 22.75 {\scriptsize$(+0.42)$} & 22.10 {\scriptsize$(+1.05)$} & 29.04 {\scriptsize$(+0.61)$}\\
+ERL-drop & & 1.59 {\scriptsize$(-1.59)$} & 1.01 {\scriptsize$(-1.00)$} & 0.45 {\scriptsize$(-0.41)$} & 1.61 {\scriptsize$(-1.61)$} & 1.01 {\scriptsize$(-1.00)$} & 0.42 {\scriptsize$(-0.40)$} & 1.66 {\scriptsize$(-1.63)$} & 1.15 {\scriptsize$(-1.02)$} & \textbf{0.82} {\scriptsize$(-0.41)$}\\
+IPW-assign & & 1.60 {\scriptsize$(-1.59)$} & 1.03 {\scriptsize$(-0.99)$} & 0.74 {\scriptsize$(-0.43)$} & 1.60 {\scriptsize$(-1.60)$} & 1.80 {\scriptsize$(-1.05)$} & 1.47 {\scriptsize$(-0.39)$} & 2.78 {\scriptsize$(-1.92)$} & 4.35 {\scriptsize$(-1.85)$} & 2.34 {\scriptsize$(-1.99)$}\\
+IPW-alloc & & 2.04 {\scriptsize$(-1.29)$} & 15.79 {\scriptsize$(+0.18)$} & 2.56 {\scriptsize$(-0.05)$} & 8.13 {\scriptsize$(-0.12)$} & 1.95 {\scriptsize$(-0.06)$} & 0.61 {\scriptsize$(-0.08)$} & 2.03 {\scriptsize$(-2.03)$} & 2.03 {\scriptsize$(-2.03)$} & 2.03 {\scriptsize$(-2.03)$}\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\textbf{Point estimation.} Figure~\ref{fig:rmse-bias} and Table~\ref{tab:rmse} summarise scenario S1, in which a genuine effect is present. Three findings stand out. First, EARL is unbiased at every allocation rate on all three graphs (largest absolute bias $0.03$, within Monte-Carlo error), while ERL-drop exhibits almost exactly the bias $-(1-q)\cdot GATE$ predicted by the theory---at $q=0.2$ it recovers barely a fifth of the true effect. IPW-assign inherits the same attenuation, because dropping unassigned units understates every unit's true connectivity, and IPW-alloc, though unbiased in principle, is so noisy that its empirical mean is still far from the target after 1000 replications. Second, EARL delivers the lowest RMSE in every cell of Table~\ref{tab:rmse} except one (on MovieLens at $q=0.8$ the biased ERL-drop edges it out), with the reduction relative to the strongest baseline reaching a factor of six on the Amazon graph at low allocation rates ($0.28$ vs $1.61$ at $q=0.2$) and an order of magnitude relative to the IPW benchmarks. Third, the comparison between EARL and EARL-centred confirms Proposition~\ref{prop:optimality} empirically: the centred variant pays a variance penalty that grows with the graph density---moderate on the sparse Amazon graph, a factor of 25 in RMSE on MovieLens. The IPW estimators illustrate the variance pathology that motivates ERL-type methods: on MovieLens (degrees in the hundreds) a fully treated or fully untreated neighbourhood is never observed, so IPW-alloc degenerates to the constant $0$ (bias exactly $-GATE$, zero variance) and IPW-assign is nearly degenerate, while on sparser graphs their error is dominated by rare, enormous weights, and partial assignment amplifies the problem by shrinking the exposure propensities from $p^{|\mathcal D(a)|}$ to $(qp)^{|\mathcal D(a)|}$.
+
+The $\gamma_u=0$ runs reveal the price of the $1/q$ reweighting. Since $\hat\tau_{EARL} = \hat\tau_{drop}/q$ under Bernoulli allocation, EARL's standard deviation is exactly $1/q$ times that of ERL-drop, and whether unbiasedness wins in RMSE depends on how this variance premium compares with the removed bias $(1-q)\cdot GATE$. The variance of both estimators is driven largely by the \emph{level} of the outcomes (the weights multiply $Y_a$, not a centred version of it): in S1 with $\gamma_u=1$ the concurrent-test term happens to offset the negative outcome intercept ($\E[\alpha_a]=-1$), so the level is small and EARL dominates broadly, as reported above; with $\gamma_u=0$ the level is of the order of the GATE itself, and on the synthetic ($q\le 0.2$) and MovieLens (all $q$) graphs the reduced-graph estimator's RMSE falls below EARL's, while on Amazon EARL still wins at every $q<1$ (by up to a factor of five). EARL remains unbiased throughout. The practical implication is standard: like all linear reweighting estimators, EARL should be applied to outcomes that are centred or covariate-adjusted (cf.\ CA-ERL \cite{shi2025scalableanalysisbipartiteexperiments}), and when the outcome level cannot be reduced and $q$ is very small, the experimenter faces a genuine bias--variance choice that our closed-form variance estimator makes quantifiable before the launch decision.
+
+In scenario S2 (effects indistinguishable from zero, $GATE\approx0.02$) the ranking reverses: the shrinkage bias of ERL-drop is \emph{multiplicative} in the GATE, so with nothing to attenuate it attains the lowest RMSE among the non-degenerate estimators (on MovieLens even the identically-zero IPW-alloc trivially ``wins''), whereas EARL pays the variance cost of unbiasedness. We report this for transparency and note that the regime in which ERL-drop wins on RMSE is exactly the regime in which the measurement question (``how large is the effect?'') is moot, and that the attenuation factor $q$ is invisible to a practitioner who does not model partial assignment in the first place. In scenario S3 (non-linear response) no estimator is consistent, as expected; EARL's error decreases towards the ERL error as $q\to1$, and no method dominates. Full tables for S2, S3, and the $\gamma_u=0$ configurations are reproducible from the accompanying code.
+
+\begin{table}
+\caption{Randomisation inference under the null of zero effects: empirical size of the nominal 5\% test and the ratio of the mean $\hat V_{RI}$ to the true variance of $\hat\tau_{EARL}$; 500 replications, $J=200$. When unassigned units carry a concurrent-test effect ($\gamma_u=1$), the strong null \eqref{def:strong-null} is violated even though all treatment effects are zero, and $\hat V_{RI}$ drifts away from the true variance.}
+\label{tab:ri}
+\begin{tabular}{llcccc}
+\toprule
+Graph & $\gamma_u$ & $q$ & Size & $\overline{\hat V}_{RI}/\var(\hat\tau)$\\
+\midrule
+Synthetic & 0 & 0.3 & 0.050 & 1.01\\
+Synthetic & 0 & 0.7 & 0.060 & 0.99\\
+Synthetic & 1 & 0.3 & 0.040 & 1.09\\
+Synthetic & 1 & 0.7 & 0.040 & 1.17\\
+Amazon & 0 & 0.3 & 0.042 & 1.08\\
+Amazon & 0 & 0.7 & 0.052 & 0.95\\
+Amazon & 1 & 0.3 & 0.046 & 1.05\\
+Amazon & 1 & 0.7 & 0.050 & 1.02\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Randomisation inference.} Table~\ref{tab:ri} evaluates the randomisation-inference procedure of Section~\ref{subsubsec:ri} under a data-generating process with all unit-level treatment effects equal to zero ($\beta_a\equiv 0$). When the strong null $H_0^*$ holds exactly ($\gamma_u=0$), the empirical size of the nominal 5\% test is within Monte-Carlo error of the nominal level and $\hat V_{RI}$ matches the true variance (ratios $0.95$--$1.08$). When unassigned units carry a concurrent-test effect ($\gamma_u=1$)---so that expected outcomes depend on $\mathbf S$ although all treatment effects are zero---the variance ratio drifts up to $1.17$ on the synthetic graph, illustrating the theoretical point of Section~\ref{subsubsec:ri}: re-randomisation reproduces the estimator's variance only under the allocation-inclusive null. In this particular data-generating process the drift is conservative (the test under-rejects), but its direction is not guaranteed in general, which is why Theorem~\ref{th:randomisation-inference} requires $H_0^*$; the closed-form estimator $\hat V$ of Section~\ref{subsubsec:variance} remains valid without any null hypothesis.
+
+\section{Conclusion}\label{sec:conclusion}
+
+We studied bipartite experiments in which only part of the randomisation-unit population is enrolled---the prevailing regime on experimentation platforms that cap rollouts and run concurrent tests. We showed that the standard practice of restricting the analysis to the enrolled units attenuates the estimated global treatment effect by the allocation rate, and proposed EARL, an exposure- and allocation-reweighted linear estimator that removes this bias by upweighting every participating connection by its inverse allocation propensity. EARL is provably unbiased whatever experience the unassigned units receive, minimum-variance in its class of linear reweighting estimators, and consistent and asymptotically normal under the same graph-sparsity conditions known for full-assignment ERL; it is accompanied by two variance estimators: an exactly unbiased closed-form estimator and a randomisation-inference procedure, for which we provide corrected validity theory and identify the allocation-inclusive null hypothesis it requires. Simulations on real bipartite graphs confirm the theory, show up to six-fold accuracy gains over the strongest baseline (an order of magnitude over Horvitz--Thompson alternatives), and delineate the low-allocation, high-outcome-level regime where the variance premium of unbiasedness makes outcome centring advisable.
+
+Several directions remain open. Natural extensions include unit-specific allocation and assignment probabilities (immediate for the estimator, mechanical for the theory), covariate adjustment in the spirit of CA-ERL \cite{shi2025scalableanalysisbipartiteexperiments}, weighted experiment graphs, and designs that optimise the allocation split across concurrent experiments jointly with the exposure distribution \cite{harshaw2023erl,brennan2022cluster}. On the theoretical side, characterising the efficiency frontier beyond the linear reweighting class, and relaxing the homogeneity assumption underlying variance estimation, both appear fruitful.
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
 
 \appendix
 
 \section{Proofs and Auxiliary Statements}\label{app:proofs}
 
+Throughout the appendix we use the shorthand
+\begin{equation}\label{def:Kw}
+    \tilde Z_r = \frac{Z_r-p}{p(1-p)},\qquad
+    K_w = \frac{d_{\mathcal A}}{q\,p(1-p)},
+\end{equation}
+so that the EARL weight \eqref{def:phi} is $\phi_a = \sum_{r\in\mathcal D(a)}(S_r/q)\tilde Z_r$, and we write $\hat\gamma_a=\phi_aY_a$ for the unit-level terms of the estimator, so that $\hat\tau_{EARL}=N^{-1}\sum_{a\in\mathcal A}\hat\gamma_a$, and
+\begin{equation}\label{def:gamma-a}
+    \gamma_a = \mu_a(1,\,1) - \mu_a(1,\,0)
+\end{equation}
+for the unit-level estimands. We will also repeatedly use the set
+\begin{equation*}
+    \mathcal T(a) = \{a'\in\mathcal A\mid \mathcal D(a')\cap \mathcal D(a) \neq \emptyset\}
+\end{equation*}
+of analysis units sharing a connected randomisation unit with $a$; note $|\mathcal T(a)|\le d_{\mathcal A}d_{\mathcal R}$ and $a\in\mathcal T(a)$ whenever $\mathcal D(a)\neq\emptyset$.
+
 \subsection{Unbiasedness of the EARL Estimator}
 
 \begin{proof}[Proof of Theorem~\ref{th:unbiasedness}]
-    Step 1. We begin by showing that 
+Step 1. We begin by showing that
 \begin{equation}\label{eq:EhatG=}
-    E[\hat \tau_{EARL}] = \frac{\partial^2\mu}{\partial x\partial y}(q,\,p).
+    \E[\hat \gamma_a] = \frac 1 q \cdot\frac{\partial\mu_a}{\partial y}(q,\,p)\qquad\forall\,a\in\mathcal A.
 \end{equation}
-For this purpose, consider the Horvitz-Thompson estimator of $\mu_a(x,\,y)$,
+For this purpose, consider the following partial Horvitz--Thompson reweighting of the observation $Y_a$, which tilts the assignment rate of the \emph{participating} units from $p$ to $y$ while leaving the allocation untouched:
 \begin{equation*}
-    HT_a(x,\,y) = \frac{\prod_{r\in\mathcal{D}(a)}x^{S_r}(1-x)^{1-S_r}y^{Z_r}(1-y)^{1-Z_r}}{\prod_{r\in\mathcal{D}(a)}q^{S_r}(1-q)^{1-S_r}p^{Z_r}(1-p)^{1-Z_r}}Y_a,\quad x,\,y\in[0,\,1],
+    T_a(y) = Y_a\prod_{r\in\mathcal{D}(a)}\left[S_r\left(\frac{y}{p}\right)^{Z_r}\left(\frac{1-y}{1-p}\right)^{1-Z_r} + (1-S_r)\right],\ \  y\in(0,\,1),
 \end{equation*}
-where the products over an empty set (i.e., in case $\mathcal D(a)=\emptyset$) is defined to be one.
-It is straightforward to check that $HT_a(x,\,y)$ is an unbiased estimator of $\mu_a(x,\,y)$ for any $a\in\mathcal{A}$ and any $x\in[0,\,1]$ and $y\in[0,\,1]$. Indeed, using the law of iterated expectations, we derive
-\begin{eqnarray}\label{eq:HTunb}
-    E[HT_a(x,\,y)] &=& E\left[\frac{\prod_{r\in\mathcal{D}(a)}x^{S_r}(1-x)^{1-S_r}y^{Z_r}(1-y)^{1-Z_r}}{\prod_{r\in\mathcal{D}(a)}q^{S_r}(1-q)^{1-S_r}p^{Z_r}(1-p)^{1-Z_r}}e_a(\textbf{S},\,\textbf{Z})\right]\nonumber\\
-    &=& \sum_{\textbf{s},\textbf{z}\in \{0,\,1\}^M}\Bigg[\frac{\prod_{r\in\mathcal{D}(a)}x^{s_r}(1-x)^{1-s_r}y^{z_r}(1-y)^{1-z_r}}{\prod_{r\in\mathcal{D}(a)}q^{s_r}(1-q)^{1-s_r}p^{z_r}(1-p)^{1-z_r}}e_a(\textbf{s},\,\textbf{z})\nonumber\\&&\times \Pr\left\{\textbf{S}=\textbf{s},\,\textbf{Z}=\textbf{z}\right\}\Bigg]\nonumber\\
-    &=& \sum_{\textbf{s},\textbf{z}\in \{0,\,1\}^M}\Bigg[\frac{\prod_{r\in\mathcal{D}(a)}x^{s_r}(1-x)^{1-s_r}y^{z_r}(1-y)^{1-z_r}}{\prod_{r\in\mathcal{D}(a)}q^{s_r}(1-q)^{1-s_r}p^{z_r}(1-p)^{1-z_r}}e_a(\textbf{s},\,\textbf{z})\nonumber\\&&\times \prod_{i=1}^Mq^{s_i}(1-q)^{1-s_{i}}p^{z_i}(1-p)^{1-z_i}\Bigg]\nonumber\\
-    &=& \frac 1 {2^{2(M-|\mathcal D(a)|)}}\sum_{\textbf{s},\textbf{z}\in \{0,\,1\}^M}\prod_{r\in\mathcal{D}(a)}x^{s_r}(1-x)^{1-s_r}y^{z_r}(1-y)^{1-z_r}e_a(\textbf{s},\,\textbf{z})\nonumber\\
-    &\stackrel{A\ref{a:mu}}{=}&
-     \mu_a(x,\,y).
-\end{eqnarray}
-For any $x\in(0,\,1)$ and any $\omega\in\Omega$, we have that $H_a(x,\,\cdot)$ is polynomial and therefore differentiable. Moreover, for any such $x$ and $\omega$, it holds that
-\begin{eqnarray*}
-    \left|\frac{\partial H_a}{\partial y}(x,\,y)\right| 
-    &\le& \frac{|\mathcal D(a)|\prod_{r\in\mathcal{D}(a)} x^{S_r}(1-x)^{1-S_r}}{\prod_{r\in\mathcal{D}(a)}q^{S_r}(1-q)^{1-S_r}p^{Z_r}(1-p)^{1-Z_r}} |Y_a|\qquad\forall\,y\in(0,\,1),
-\end{eqnarray*}
-where the right-hand side is an integrable random variable. Thus, we can swap differentiation and integration, i.e.,
-\begin{equation*}
-    \E\left[\frac{\partial HT_a}{\partial y}(x,\,y)\right] = \frac{\partial}{\partial y}\E[HT_a(x,\,y)] \stackrel{\eqref{eq:HTunb}}{=} \frac{\partial \mu_a}{\partial y}(x,\,y)\qquad \forall\,x,\,y\in(0,\,1)
-\end{equation*}
-In full analogy, it can be further derived that
-\begin{equation}\label{eq:d2HTunb}
-    \E\left[\frac{\partial^2 HT_a}{\partial x\partial y}(x,\,y)\right] = \frac{\partial^2\mu_a}{\partial x\partial y}(x,\,y)\qquad \forall\,x,\,y\in(0,\,1).
+where a product over an empty set is defined to be one. We claim that
+\begin{equation}\label{eq:HTunb}
+    \E[T_a(y)] = \mu_a(q,\,y)\qquad \forall\,y\in(0,\,1).
 \end{equation}
-Now, by direct computation we get that
-\begin{eqnarray}\label{eq:d2HT=}
-    \frac{\partial^2 HT_a}{\partial x\partial y}(q,\,p) &=& 
-    % \frac{\partial}{\partial x\partial y}\left(\frac{x^{\sum_{i=1}^M S_i}\cdot(1-x)^{\left(M-\sum_{i=1}^M S_i\right)}\cdot y^{\sum_{i=1}^M Z_i}\cdot(1-y)^{\left(M-\sum_{i=1}^M Z_i\right)}}{q^{\sum_{i=1}^M S_i}\cdot(1-q)^{\left(M-\sum_{i=1}^M S_i\right)}\cdot p^{\sum_{i=1}^M Z_i}\cdot(1-p)^{\left(M-\sum_{i=1}^M Z_i\right)}}Y_a\right)
-    \sum_{r\in\mathcal{D}(a)} (S_r q^{-1} + (1-S_r)(1-q)^{-1})\nonumber\\&&{}\times \sum_{r\in\mathcal{D}(a)} (Z_r p^{-1} + (1-Z_r)(1-p)^{-1}) \cdot Y_a  \nonumber\\
-    &=& \left(\sum_{r\in\mathcal{D}(a)} \frac {S_r-q}{q(1-q)} \cdot \sum_{r\in\mathcal{D}(a)} \frac{Z_r-p}{p(1-p)}\right)Y_a\nonumber\\
-    &=& \frac {G_a-\E[G_a]}{\textup{var}\left(G_a\right)} \cdot \frac {H_a-\E[H_a]}{\textup{var}\left(H_a\right)}\cdot Y_a\label{eq:=earla}
-\end{eqnarray}
-The combination of \eqref{eq:d2HTunb} and \eqref{eq:d2HT=} gives \eqref{eq:EhatG=}.
+Indeed, by the law of iterated expectations, $\E[T_a(y)]$ equals the expectation of $e_a(\mathbf S,\,\mathbf Z)$ multiplied by the product in the display. Conditionally on $\mathbf S$, taking the expectation over $\mathbf Z$ replaces the distribution of $Z_r$ by $\mathrm{Bernoulli}(y)$ for every $r$ with $S_r=1$ (the factor $(y/p)^{z_r}((1-y)/(1-p))^{1-z_r}$ is exactly the likelihood ratio between $\mathrm{Bernoulli}(y)$ and $\mathrm{Bernoulli}(p)$), while the coordinates with $S_r=0$ keep the distribution $\mathrm{Bernoulli}(p)$. By Assumption~A\ref{a:mu}(ii), $e_a$ does not depend on the assignment coordinates of units with $S_r=0$, so the latter coordinates can equivalently be drawn from $\mathrm{Bernoulli}(y)$ without changing the expectation; by Assumption~A\ref{a:mu}(i), neither do the coordinates outside $\mathcal D(a)$ matter. Hence
+\begin{equation*}
+    \E[T_a(y)\mid \mathbf S] = \E_{Z_r\iidsim \mathrm{Bern}(y)}\left[e_a(\mathbf S,\,\mathbf Z)\right],
+\end{equation*}
+and averaging over $\mathbf S\sim \mathrm{Bernoulli}(q)^{\otimes M}$ yields \eqref{eq:HTunb} by the definition \eqref{eq:ma} of $\mu_a$.
+
+For any $\omega\in\Omega$ the map $y\mapsto T_a(y)$ is a polynomial and therefore differentiable, and for all $y\in(0,\,1)$,
+\begin{equation*}
+    \left|\frac{\partial T_a}{\partial y}(y)\right|
+    \le |Y_a|\, d_{\mathcal A}\left(\max\left(\frac 1p,\,\frac 1{1-p}\right)\right)^{d_{\mathcal A}}
+\end{equation*}
+(each bracketed factor and each of its derivatives in $y$ is bounded by $\max(1/p,\,1/(1-p))$), where the right-hand side is an integrable random variable. Thus, we can swap differentiation and integration, i.e.,
+\begin{equation}\label{eq:swap}
+    \E\left[\frac{\partial T_a}{\partial y}(y)\right] = \frac{\partial}{\partial y}\E[T_a(y)] \stackrel{\eqref{eq:HTunb}}{=} \frac{\partial \mu_a}{\partial y}(q,\,y),\quad y\in(0,\,1).
+\end{equation}
+Now, by direct computation (each bracketed factor equals $1$ at $y=p$, and its derivative at $y=p$ equals $S_r\tilde Z_r$),
+\begin{equation}\label{eq:d2HT=}
+    \frac{\partial T_a}{\partial y}(p) =
+    \sum_{r\in\mathcal{D}(a)} S_r\tilde Z_r\, Y_a = q\,\phi_a Y_a = q\,\hat\gamma_a.
+\end{equation}
+The combination of \eqref{eq:swap} at $y=p$ and \eqref{eq:d2HT=} gives \eqref{eq:EhatG=}.
 
 Step 2. The next step is to prove that
 \begin{equation}\label{eq:GATE=d2mu}
     \exists\,\eta,\,\xi\in(0,\,1)\colon\quad GATE = \frac{\partial^2\mu}{\partial x \partial y}(\eta,\,\xi).
 \end{equation}
-
-From definitions \eqref{eq:ma} and \eqref{eq:mu}, it follows that the function $\mu$ is a polynomial and hence $\mu(1,\cdot)$ is continuous on $[0,\,1]$ and differentiable on $(0,\,1)$, satisfying the mean-value theorem \cite{mean-value}. Thus, there exists $\xi\in(0,\,1)$ such that
+From definitions \eqref{eq:ma} and \eqref{eq:mu}, it follows that the function $\mu$ is a polynomial and hence $\mu(1,\,\cdot)$ is continuous on $[0,\,1]$ and differentiable on $(0,\,1)$, satisfying the mean-value theorem \cite[Theorem~5.10]{rudin1976principles}. Thus, there exists $\xi\in(0,\,1)$ such that
 \begin{equation}\label{eq:mv-mu}
     \mu(1,\,1)-\mu(1,\,0) = \frac{\partial\mu}{\partial y}(1,\,\xi).
 \end{equation}
 Next, observe that
+\begin{equation}\label{eq:mu0const}
+    \mu(0,\,\cdot) = const,
+\end{equation}
+because if none of the randomisation units participates in the experiment, the expected outcome of any analysis unit does not depend on the rate at which participating units would be assigned to treatment (formally, this is Assumption~A\ref{a:mu}(ii) applied to $\mathbf s = \mathbf 0$ in \eqref{eq:ma}). Consequently,
 \begin{equation*}
-    \mu(0,\,\cdot) = const
-\end{equation*}
-because if none of the randomisation units participates in the experiment the expected outcome of any analysis unit does not depend on the rate at which participating units would be assigned to treatment. Consequently,
-\begin{equation*}
-    \frac{\partial\mu}{\partial y}(0,\,\cdot) \equiv 0
-\end{equation*}
-and, in particular,
-\begin{equation*}
+    \frac{\partial\mu}{\partial y}(0,\,\cdot) \equiv 0,\qquad\textup{in particular}\qquad
     \frac{\partial\mu}{\partial y}(0,\,\xi) = 0.
 \end{equation*}
 Using the last equality we can rewrite \eqref{eq:mv-mu} as
 \begin{equation*}
     \mu(1,\,1)-\mu(1,\,0) = \frac{\partial\mu}{\partial y}(1,\,\xi) - \frac{\partial\mu}{\partial y}(0,\,\xi).
 \end{equation*}
-Applying the mean-value theorem \cite{mean-value} once again, we obtain that
+Applying the mean-value theorem once again (to the function $x\mapsto \frac{\partial\mu}{\partial y}(x,\,\xi)$), we obtain that
 \begin{equation}\label{eq:deltamu=d2dxdy}
     \mu(1,\,1)-\mu(1,\,0) = \frac{\partial^2\mu}{\partial x\partial y}(\eta,\,\xi)
 \end{equation}
 for some $\eta\in(0,\,1)$. The definition of GATE \eqref{eq:gate} and the relation \eqref{eq:deltamu=d2dxdy} imply \eqref{eq:GATE=d2mu}.
 
-Step 3. By combining \eqref{eq:GATE=d2mu} with \eqref{eq:EhatG=} and applying the mean-value theorem \cite{mean-value} a third time, we find that there exists $t\in(0,\,1)$ such that
-\begin{eqnarray*}\label{eq:=d3mu}
-    E[\hat\tau_{EARL}] - GATE &=& \frac{\partial^3\mu}{\partial x^2\partial y}(\eta+t(q-\eta),\,\xi+t(p-\xi))(q-\eta) \nonumber\\ &&{}+ \frac{\partial^3\mu}{\partial x\partial y^2}((\eta+t(q-\eta),\,\xi+t(p-\xi))(p-\xi).
-\end{eqnarray*}
-Since $|q-\eta| < 1$ and $|p-\xi| < 1$, the bound \eqref{eq:bound} readily follows.
+Step 3. By the same argument applied to the function $x\mapsto\frac{\partial \mu}{\partial y}(x,\,p)$ on the interval $[0,\,q]$ (whose value at $0$ vanishes by \eqref{eq:mu0const}), averaging \eqref{eq:EhatG=} over $a\in\mathcal A$ yields
+\begin{equation}\label{eq:EhatTau}
+    \E[\hat\tau^{\phantom{1}}_{EARL}] = \frac 1q\cdot \frac{\partial\mu}{\partial y}(q,\,p) = \frac 1q \cdot q\cdot\frac{\partial^2\mu}{\partial x\partial y}(\tilde x,\,p) = \frac{\partial^2\mu}{\partial x\partial y}(\tilde x,\,p)
+\end{equation}
+for some $\tilde x\in(0,\,q)$.
 
-Step 4. Finally, suppose that Assumption~A\ref{a:4} holds true. In that case, for any analysis unit $a\in\mathcal A$ the expected outcome function $\mu_a$ defined in \eqref{eq:ma} is quadratic, 
+Step 4. By combining \eqref{eq:GATE=d2mu} with \eqref{eq:EhatTau} and applying the mean-value theorem to the function $t\mapsto \frac{\partial^2\mu}{\partial x\partial y}\left((\tilde x,\,p) + t\,(\eta-\tilde x,\,\xi - p)\right)$ on $[0,\,1]$, we find that there exists $t\in(0,\,1)$ such that, with $(x_t,\,y_t) = (\tilde x,\,p) + t(\eta - \tilde x,\,\xi - p)$,
 \begin{eqnarray*}
-    \mu_a(x,\,y) &\stackrel{\eqref{eq:ma}}{=}& \E_{S_i\iidsim Bernoulli(x),\,Z_i\iidsim Bernoulli(y),\,\mathbf S\ind \mathbf Z}[e_a(\mathbf S,\,\mathbf Z)] \\
-    &\stackrel{A\ref{a:4}}{=}& \sum_{i=1}^M(\beta^a_{i,\,0} + \beta^a_{i,\,1}(1-x) + \beta^a_{i,\,2} xy + \beta^a_{i,\,3}x(1-y)),
+    \E[\hat\tau_{EARL}] - GATE &=& \frac{\partial^3\mu}{\partial x^2\partial y}(x_t,\,y_t)\,(\tilde x-\eta) \nonumber\\ &&{}+ \frac{\partial^3\mu}{\partial x\partial y^2}(x_t,\,y_t)\,(p-\xi).
 \end{eqnarray*}
-which implies that the average expected outcome $\mu$ defined in \eqref{eq:mu} is also a quadratic function and hence $\frac{\partial^3\mu}{\partial x^2\partial y}$ and $\frac{\partial^3\mu}{\partial x\partial y^2}$ are zero everywhere on $(0,\,1)\times (0,\,1)$. Therefore, the right-hand side of \eqref{eq:bound} becomes zero, implying \eqref{eq:unbiasedness}.
+Since $|\tilde x-\eta| < 1$ and $|p-\xi| < 1$, the bound \eqref{eq:bound} readily follows.
+
+Step 5. Finally, suppose that Assumption~A\ref{a:4} holds true. In that case, for any analysis unit $a\in\mathcal A$ the expected outcome function $\mu_a$ defined in \eqref{eq:ma} is a quadratic polynomial,
+\begin{eqnarray*}
+    \mu_a(x,\,y) &\stackrel{\eqref{eq:ma}}{=}& \E_{S_r\iidsim \mathrm{Bern}(x),\,Z_r\iidsim \mathrm{Bern}(y),\,\mathbf S\ind \mathbf Z}[e_a(\mathbf S,\,\mathbf Z)] \\
+    &\stackrel{A\ref{a:4}}{=}& \sum_{r=1}^M(\beta^a_{r,\,0} + \beta^a_{r,\,1}(1-x) + \beta^a_{r,\,2}\, xy + \beta^a_{r,\,3}\,x(1-y)),
+\end{eqnarray*}
+which implies that the average expected outcome $\mu$ defined in \eqref{eq:mu} is also a quadratic polynomial of this form, and hence $\frac{\partial^3\mu}{\partial x^2\partial y}$ and $\frac{\partial^3\mu}{\partial x\partial y^2}$ are zero everywhere on $(0,\,1)\times (0,\,1)$. Therefore, the right-hand side of \eqref{eq:bound} is zero, implying \eqref{eq:unbiasedness}.
+\end{proof}
+
+\begin{remark}\label{rmk:unbiasedness}
+    \textup{
+    From the proof of Theorem~\ref{th:unbiasedness} it can be seen that under Assumptions~A\ref{a:1}--A\ref{a:4}, each individual $\hat\gamma_a$ is unbiased for its respective estimand $\gamma_a$ \eqref{def:gamma-a}. Indeed, in Step 1 we establish that $\E[\hat\gamma_a] = q^{-1}\frac{\partial\mu_a}{\partial y}(q,\,p)$. The logic of Steps 2--3 applies to each individual function $\mu_a$ and shows that $\E[\hat\gamma_a] = \frac{\partial^2\mu_a}{\partial x \partial y}(\tilde x_a,\,p)$ and $\gamma_a = \frac{\partial^2\mu_a}{\partial x \partial y}(\eta_a,\,\xi_a)$ for some interior points. Finally, Step 5 uses Assumption~A\ref{a:4} to show that $\mu_a$ is a quadratic polynomial with constant mixed derivative, whence $\E[\hat\gamma_a] = \gamma_a$.}
+\end{remark}
+
+\subsection{Optimality within the Linear Reweighting Class}\label{app:optimality}
+
+\begin{proof}[Proof of Proposition~\ref{prop:optimality}]
+    Write $\tilde Z_r=(Z_r-p)/(p(1-p))$ and note $\E[\tilde Z_r]=0$, $\E[\tilde Z_rZ_r]=1$. Any $c\colon\{0,\,1\}\mapsto\R$ can be written as
+    \begin{equation*}
+        c(s) = c(1)\,s + c(0)\,(1-s) = q\,c(1)\cdot\frac sq + c(0)\,(1-s),
+    \end{equation*}
+    so that
+    \begin{equation}\label{eq:c-decomp}
+        \hat\tau_c = q\,c(1)\,\hat\tau_{EARL} + c(0)\,\hat\tau_U
+    \end{equation}
+    with $\hat\tau_U$ as defined in the proposition.
+
+    We first show that
+    \begin{equation}\label{eq:U-orth}
+        \E[\hat\tau_U] = 0\quad\textup{and}\quad \E[\hat\tau_U\,\hat\tau_{EARL}] = 0
+    \end{equation}
+    for every outcome model satisfying the stated conditions. Consider any product moment of the form $\E[(1-S_r)\tilde Z_r\, h(\mathbf Y,\,\mathbf S,\,\mathbf Z_{-r})]$, where $\mathbf Z_{-r}$ collects all assignment coordinates except $Z_r$ and $h$ is any integrable function. On the event $\{S_r=0\}$, the conditional distribution of $\mathbf Y$ given $(\mathbf S,\,\mathbf Z)$ does not depend on $Z_r$ (would-be assignments are excluded by hypothesis), and $Z_r$ is independent of $(\mathbf S,\,\mathbf Z_{-r})$ by Assumption~A\ref{a:1}. Hence, conditionally on $\{S_r=0\}$ and $(\mathbf S,\,\mathbf Z_{-r})$, the factor $\tilde Z_r$ is independent of the rest and has zero mean, so the whole expectation vanishes:
+    \begin{equation}\label{eq:kill-term}
+        \E\left[(1-S_r)\tilde Z_r\, h(\mathbf Y,\,\mathbf S,\,\mathbf Z_{-r})\right] = 0.
+    \end{equation}
+    Every summand of $\E[\hat\tau_U]$ has the form \eqref{eq:kill-term} with $h = Y_a$. Every summand of $\E[\hat\tau_U\hat\tau_{EARL}]$ has the form
+    $\E[(1-S_r)\tilde Z_r\cdot (S_{r'}/q)\tilde Z_{r'} Y_aY_{a'}]$; if $r'=r$ it vanishes because $(1-S_r)S_r=0$, and if $r'\neq r$ it has the form \eqref{eq:kill-term} with $h = (S_{r'}/q)\tilde Z_{r'}Y_aY_{a'}$. This proves \eqref{eq:U-orth}.
+
+    Part (a). By \eqref{eq:c-decomp} and \eqref{eq:U-orth}, $\E[\hat\tau_c] = q\,c(1)\,\E[\hat\tau_{EARL}]$ for every admissible outcome model. If $q\,c(1)=1$, the expectations agree always. Conversely, take the outcome model $Y_a = F_a$ (which satisfies all the conditions): then $\E[\hat\tau_{EARL}] = N^{-1}\sum_a \mathbf 1\{\mathcal D(a)\neq\emptyset\}\neq 0$ for a non-trivial graph, so $\E[\hat\tau_c]=\E[\hat\tau_{EARL}]$ forces $q\,c(1)=1$. The final claim of (a) follows from Theorem~\ref{th:unbiasedness}(b).
+
+    Part (b). With $q\,c(1)=1$, decomposition \eqref{eq:c-decomp} reads $\hat\tau_c = \hat\tau_{EARL} + c(0)\hat\tau_U$, and by \eqref{eq:U-orth} the two terms are uncorrelated with $\E[\hat\tau_U]=0$. Hence
+    \begin{equation*}
+        \var(\hat\tau_c) = \var(\hat\tau_{EARL}) + c(0)^2\var(\hat\tau_U). \qedhere
+    \end{equation*}
 \end{proof}
 
 \subsection{Consistency of the EARL Estimator}
 
-We next prove the consistency of $\hat\tau_{EARL}$ (Theorem~\ref{th:consistency}). To that end, let's introduce some additional notation. Let $\gamma_a$ stand for the contribution of analysis unit $a\in\mathcal{A}$ to GATE \eqref{eq:gate}, that is
-\begin{equation}\label{def:gamma-a}
-    \gamma_a = \mu_a(1,\,1) - \mu_a(1,\,0).
-\end{equation}
-Furthermore, let us $\hat \gamma_a$ be the summand corresponding to $a$ in the EARL estimator \eqref{eq:earl}, i.e.,
-\begin{equation}\label{def:hat-gamma-a}
-    \hat\gamma_a = \left(\frac{G_a - \E[G_a]}{\textup{var} \left(G_a\right)}\cdot \frac{H_a - \E[H_a]}{\textup{var} \left(H_a\right)}\right)Y_a.
-\end{equation}
-
-\begin{remark}\label{rmk:unbiasedness}
-    \textup{
-    From the proof of Theorem~\ref{th:unbiasedness} it can be seen that under Assumptions~A\ref{a:1}--A\ref{a:4}, each individual $\hat\gamma_i$ is unbiased for its respective estimand $\gamma_a$. Indeed, in step 1 we establish that $\E[\hat\gamma_a] = \frac{\partial^2\mu_a}{\partial x \partial y}(q,\,p)$. Then, the logic of step 2 can be applied to each individual function $\mu_a$ to show that $\gamma_a = \frac{\partial^2\mu_a}{\partial x \partial y}(\eta_a,\,\xi_a)$ for some $(\eta_a,\,\xi_a)\in(0,\,1)\times(0,\,1)$. Finally, step 4 uses Assumption~A\ref{a:4} to show that $\mu_a$ is a quadratic function, which implies that its Hessian is constant on $(0,\,1)\times(0,\,1)$ and hence $\E[\hat\gamma_a] = \frac{\partial^2\mu_a}{\partial x \partial y}(q,\,p) = \frac{\partial^2\mu_a}{\partial x \partial y}(\eta_a,\,\xi_a)=\gamma_a$.}
-\end{remark}
-
 We begin with the following simple lemma.
 \begin{lemma}\label{lem:weight-bound}
-    Let the random variables $S_i\colon\Omega\mapsto\{0,\,1\}$ and $Z_i\colon\Omega\mapsto\{0,\,1\}$, $i=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1} and let $G_a$ and $H_a$ be defined as in \eqref{eq:Ga} and \eqref{eq:Ha}, respectively. Then
+    Let the random variables $S_r,\,Z_r\colon\Omega\mapsto\{0,\,1\}$, $r=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1} and let $\phi_a$ be defined as in \eqref{def:phi}. Then, with $K_w$ from \eqref{def:Kw},
     \begin{equation*}
-        \left|\frac{G_a - \E[G_a]}{\textup{var}(G_a)}\right| \le \frac{d_{\mathcal{A}}}{q(1-q)}\quad\textup{and}\quad \left|\frac{H_a - \E[H_a]}{\textup{var}(H_a)}\right| \le \frac{d_{\mathcal{A}}}{p(1-p)}.
+        \left|\phi_a\right| \le K_w\qquad \forall\,a\in\mathcal A.
     \end{equation*}
 \end{lemma}
 \begin{proof}
-    By the definition of $G_a$ \eqref{eq:Ga} we have that
-    \begin{equation}\label{eq:standardised-Ga-bound}
-        \left|\frac{G_a - \E[G_a]}{\textup{var}(G_a)}\right| = \frac{|G_a - \E[G_a]|}{\textup{var}(G_a)} \le \frac{1}{\textup{var}(G_a)} = \frac{|\mathcal{D}(a)|}{q(1-q)}\le \frac{d_{\mathcal{A}}}{q(1-q)}.
-    \end{equation}
-    The proof for $H_a$ is fully analogous.
+    Each summand of $\phi_a$ satisfies $|(S_r/q)\tilde Z_r| \le \frac{\max(p,\,1-p)}{q\,p(1-p)} \le \frac{1}{q\,p(1-p)}$, and there are at most $d_{\mathcal A}$ summands.
 \end{proof}
 
-Similarly to \cite{harshaw2023erl}[Lemma~A.3], we proceed by establishing a bound on the $k$-th absolute moment of the error $(\hat\gamma_a - \gamma_a)$.
+Similarly to \cite[Lemma~A.3]{harshaw2023erl}, we proceed by establishing a bound on the $k$-th absolute moment of the error $(\hat\gamma_a - \gamma_a)$.
 \begin{lemma}\label{lem:kth-abs-moment-bound}
-    Let the random variables $S_i\colon\Omega\mapsto\{0,\,1\}$ and $Z_i\colon\Omega\mapsto\{0,\,1\}$, $i=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1} and let $G_a$ and $H_a$ be defined as in \eqref{eq:Ga} and \eqref{eq:Ha}, respectively. Let the outcome variables $Y_a$, $a\in\mathcal{A}$, have a finite absolute moment of order $K\ge 1$ and let Assumption A\ref{a:4} be true.
-    
+    Let the random variables $S_r,\,Z_r\colon\Omega\mapsto\{0,\,1\}$, $r=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}. Let the outcome variables $Y_a$, $a\in\mathcal{A}$, have a finite absolute moment of order $K\ge 1$ and let Assumptions A\ref{a:mu} and A\ref{a:4} be true.
+
     Then for each $k=1,\,\ldots,\,K$ it holds that
     \begin{equation*}
-        \E[|\hat\gamma_a-\gamma_a|^k] \le \left(\frac{2d^2_{\mathcal{A}}}{q(1-q)p(1-p)}\right)^k \E[|Y_a|^k].
+        \E[|\hat\gamma_a-\gamma_a|^k] \le \left(2K_w\right)^k \E[|Y_a|^k].
     \end{equation*}
 \end{lemma}
 \begin{proof}
-    Using Lemma~\ref{lem:weight-bound}, we obtain that for any $k=1,\,\ldots,\,K$, the following inequality is valid,
+    Using Lemma~\ref{lem:weight-bound}, we obtain that for any $k=1,\,\ldots,\,K$,
     \begin{eqnarray}\label{eq:E-hat-ga-k-bound}
-        \E[|\hat\gamma_a|^k] &=& \E\left[\left|\frac{G_a-\E[G_a]}{\textup{var}(G_a)}\right|^k\left|\frac{H_a-\E[H_a]}{\textup{var}(H_a)}\right|^k|Y_a|^k\right]\nonumber\\
-        &\stackrel{\textup{Lemma}~\ref{lem:weight-bound}}{\le}& \left(\frac{d^2_{\mathcal{A}}}{q(1-q)p(1-p)}\right)^k\E[|Y_a|^k].
+        \E[|\hat\gamma_a|^k] &=& \E\left[\left|\phi_a\right|^k|Y_a|^k\right]
+        \stackrel{\textup{Lemma}~\ref{lem:weight-bound}}{\le} K_w^k\,\E[|Y_a|^k].
     \end{eqnarray}
-    From the last inequality it follows that
+    From the last inequality and Remark~\ref{rmk:unbiasedness} it follows that
     \begin{eqnarray}\label{eq:ga-bound}
-        |\gamma_a| = |\E[\hat\gamma_a]| \le \E[|\hat\gamma_a|] \le \left(\frac{d^2_{\mathcal{A}}}{q(1-q)p(1-p)}\right)\E[|Y_a|].
-    \end{eqnarray}    
-    Combining, \eqref{eq:E-hat-ga-k-bound} and \eqref{eq:ga-bound}, and using Minkowski's inequality we derive that
+        |\gamma_a| = |\E[\hat\gamma_a]| \le \E[|\hat\gamma_a|] \le K_w\,\E[|Y_a|] \le K_w\left(\E[|Y_a|^k]\right)^{1/k},
+    \end{eqnarray}
+    where the last step is Jensen's inequality. Combining \eqref{eq:E-hat-ga-k-bound} and \eqref{eq:ga-bound}, and using Minkowski's inequality we derive that
     \begin{eqnarray*}
-        E[|\hat\gamma_a-\gamma_a|^k] &\le& \left(\left(\E[|\hat\gamma_a|^k]\right)^{1/k} + \left(\E[|\gamma_a|^k]\right)^{1/k}\right)^{k}\\
-        &\le& \left(\frac{d^2_{\mathcal{A}}}{q(1-q)p(1-p)}\right)^k\left(\left(\E[|Y_a|^k]\right)^{1/k}+\E[|Y_a|]\right)^k\\
-        &\le& \left(\frac{d^2_{\mathcal{A}}}{q(1-q)p(1-p)}\right)^k\left(\left(\E[|Y_a|^k]\right)^{1/k}+\left(\E[|Y_a|^k]\right)^{1/k}\right)^k\\
-        &\le& \left(\frac{2d^2_{\mathcal{A}}}{q(1-q)p(1-p)}\right)^k\E[|Y_a|^k]
+        \E[|\hat\gamma_a-\gamma_a|^k] &\le& \left(\left(\E[|\hat\gamma_a|^k]\right)^{1/k} + |\gamma_a|\right)^{k}\\
+        &\le& \left(K_w\left(\E[|Y_a|^k]\right)^{1/k}+K_w\left(\E[|Y_a|^k]\right)^{1/k}\right)^k\\
+        &=& \left(2K_w\right)^k\E[|Y_a|^k]
     \end{eqnarray*}
     for all $k=1,\,\ldots,\,K$.
 \end{proof}
 
-
 \begin{lemma}\label{lem:cov=0}
-    Let the random variables $S_i\colon\Omega\mapsto\{0,\,1\}$ and $Z_i\colon\Omega\mapsto\{0,\,1\}$, $i=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1} and let $G_a$ and $H_a$ be defined as in \eqref{eq:Ga} and \eqref{eq:Ha}, respectively. Suppose the outcome variables $Y_a$, $a\in\mathcal{A}$, are integrable and Assumptions~A\ref{a:mu} and A\ref{a:no-autocorrelation} hold true. Let the random variables $\hat\gamma_a$ and the numbers $\gamma_a\in\R$, $a\in\mathcal{A}$, be defined as in \eqref{def:hat-gamma-a} and \eqref{def:gamma-a}, respectively.
+    Let the random variables $S_r,\,Z_r\colon\Omega\mapsto\{0,\,1\}$, $r=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}. Suppose the outcome variables $Y_a$, $a\in\mathcal{A}$, are integrable and Assumptions~A\ref{a:mu}, A\ref{a:4}, and A\ref{a:no-autocorrelation} hold true.
 
-    Then 
+    Then
     \begin{itemize}
         \item[\textup{(a)}]
-            % \begin{equation*}
-                $\E[Y_{a_1}Y_{a_2}\mid \mathbf{S},\,\mathbf{Z}] = e_{a_1}(\mathbf{S},\,\mathbf{Z})e_{a_2}(\mathbf{S},\,\mathbf{Z})\qquad \forall\,a_1,\,a_2\in\mathcal A$,
-            % \end{equation*}
+            $\E[Y_{a_1}Y_{a_2}\mid \mathbf{S},\,\mathbf{Z}] = e_{a_1}(\mathbf{S},\,\mathbf{Z})\,e_{a_2}(\mathbf{S},\,\mathbf{Z})$ for all $a_1\neq a_2\in\mathcal A$,
         \item[\textup{(b)}] for any two analysis units $a_1,\,a_2\in\mathcal{A}$ such that $\mathcal D(a_1)\cap \mathcal D(a_2) = \emptyset$ it holds that
-        \begin{equation*}\label{eq:cov=0}
+        \begin{equation}\label{eq:cov=0}
             \E[(\hat\gamma_{a_1} - \gamma_{a_1})(\hat\gamma_{a_2} - \gamma_{a_2})] = 0.
-        \end{equation*}        
+        \end{equation}
     \end{itemize}
-
 \end{lemma}
 \begin{proof}
-        Let $\varepsilon_a$, $a\in\mathcal{A}$, be the errors as defined by \eqref{def:epsa}. From the definition, it follows that 
+    Let $\varepsilon_a$, $a\in\mathcal{A}$, be the errors defined by \eqref{def:epsa}. From the definition, it follows that
     \begin{eqnarray}\label{eq:cond-E-eps-a=0}
         \E[\varepsilon_a\mid \mathbf{S},\,\mathbf{Z}] = 0\qquad\forall\,a\in\mathcal A.
     \end{eqnarray}
-    Furthermore, due to Assumption~A\ref{a:no-autocorrelation} we have that
+    Furthermore, due to Assumption~A\ref{a:no-autocorrelation} we have that for $a_1\neq a_2$,
     \begin{eqnarray}\label{eq:E-prod-eps=0}
         \E[\varepsilon_{a_1}\varepsilon_{a_2}\mid \mathbf{S},\,\mathbf{Z}]
-        &\stackrel{A\ref{a:no-autocorrelation}}{=}& \E[\E[\varepsilon_{a_1}\mid \mathbf{S},\,\mathbf{Z}]\cdot
-        \E[\varepsilon_{a_2}\mid \mathbf{S},\,\mathbf{Z}]]\nonumber\\
-        &=& 0.
+        &\stackrel{A\ref{a:no-autocorrelation}}{=}& \E[\varepsilon_{a_1}\mid \mathbf{S},\,\mathbf{Z}]\cdot
+        \E[\varepsilon_{a_2}\mid \mathbf{S},\,\mathbf{Z}]
+        \stackrel{\eqref{eq:cond-E-eps-a=0}}{=} 0.
     \end{eqnarray}
     Using \eqref{eq:cond-E-eps-a=0} and \eqref{eq:E-prod-eps=0}, we obtain that
     \begin{eqnarray}\label{eq:E-prod-Y=E-prod-e}
         \E[Y_{a_1}Y_{a_2}\mid \mathbf{S},\,\mathbf{Z}] &=& \E[
         (e_{a_1}(\mathbf{S},\,\mathbf{Z}) + \varepsilon_{a_1})
-        (e_{a_2}(\mathbf{S},\,\mathbf{Z}) + \varepsilon_{a_2})
+        (e_{a_2}(\mathbf{S},\,\mathbf{Z}) + \varepsilon_{a_2})\mid \mathbf{S},\,\mathbf{Z}
         ]\nonumber\\
-        &=& e_{a_1}(\mathbf{S},\,\mathbf{Z})e_{a_2}(\mathbf{S},\,\mathbf{Z}) \nonumber\\&&{}+ \E[\varepsilon_{a_1}\mid \mathbf{S},\,\mathbf{Z}]e_{a_2}(\mathbf{S},\,\mathbf{Z}) + e_{a_1}(\mathbf{S},\,\mathbf{Z})\E[\varepsilon_{a_2}\mid \mathbf{S},\,\mathbf{Z}] \nonumber\\&&{}+ \E[\varepsilon_{a_1} \varepsilon_{a_2}\mid \mathbf{S},\,\mathbf{Z}] \nonumber\\
-        &\stackrel{\eqref{eq:cond-E-eps-a=0},\,\eqref{eq:E-prod-eps=0}}{=}& e_{a_1}(\mathbf{S},\,\mathbf{Z})e_{a_2}(\mathbf{S},\,\mathbf{Z})
+        &=& e_{a_1}(\mathbf{S},\,\mathbf{Z})\,e_{a_2}(\mathbf{S},\,\mathbf{Z}),
     \end{eqnarray}
-    for any $a_1,\,a_2\in\mathcal{A}$, which proves (a).
+    which proves (a).
 
-    Next let $W_G(a)$ and $W_H(a)$ denote the standardised allocation and exposure variables, respectively, i.e., $W_G(a)=(G_a - \E[G_a])/\textup{var}(G_a)$ and $W_H(a)=(H_a - \E[H_a])/\textup{var}(H_a)$. Consider any two analysis units $a_1$ and $a_2$ that have no connected randomisation units in common, meaning that $\mathcal{D}(a_1)\cap \mathcal{D}(a_2)=\emptyset$. Given Assumption~A\ref{a:mu} and the definitions of $G_{a}$ \eqref{eq:Ga} and $H_a$ \eqref{eq:Ha}, the terms $W_G(a_1)W_H(a_1)\allowbreak e_{a_1}(\mathbf{S},\,\mathbf{Z})$ and $W_G(a_2)W_H(a_2)e_{a_2}(\mathbf{S},\,\mathbf{Z})$ are functions of non-overlapping subsets of allocation and assignment indicators and are therefore independent due to Assumption~A\ref{a:1}. Using this observation together with \eqref{eq:E-prod-Y=E-prod-e}, we conclude that
-
+    Next, consider any two analysis units $a_1$ and $a_2$ with $\mathcal{D}(a_1)\cap \mathcal{D}(a_2)=\emptyset$. Given Assumption~A\ref{a:mu} and the definition of $\phi_a$ \eqref{def:phi}, the random variables $\phi_{a_1} e_{a_1}(\mathbf{S},\,\mathbf{Z})$ and $\phi_{a_2}e_{a_2}(\mathbf{S},\,\mathbf{Z})$ are functions of non-overlapping subsets of allocation and assignment indicators and are therefore independent due to Assumption~A\ref{a:1}. Using this observation together with \eqref{eq:E-prod-Y=E-prod-e}, we conclude that
     \begin{eqnarray}\label{eq:=0}
         \E[\hat\gamma_{a_1}\hat\gamma_{a_2}]
-        &=& \E\left[W_G(a_1)W_H(a_1)W_G(a_2)W_H(a_2)\E[Y_{a_1}Y_{a_2}\mid \mathbf{S},\,\mathbf{Z}]\right]
+        &=& \E\left[\phi_{a_1}\phi_{a_2}\,\E[Y_{a_1}Y_{a_2}\mid \mathbf{S},\,\mathbf{Z}]\right]
         \nonumber\\
-        &\stackrel{\eqref{eq:E-prod-Y=E-prod-e}}{=}& \E\left[W_G(a_1)W_H(a_1)W_G(a_2)W_H(a_2)e_{a_1}(\mathbf{S},\,\mathbf{Z})e_{a_2}(\mathbf{S},\,\mathbf{Z})\right]\nonumber\\
-        &=& \E\left[W_G(a_1)W_H(a_1)e_{a_1}(\mathbf{S},\,\mathbf{Z})]\cdot\E[W_G(a_2)W_H(a_2)e_{a_2}(\mathbf{S},\,\mathbf{Z})\right] \nonumber\\
-        &=& \E\left[W_G(a_1)W_H(a_1)Y_{a_1}]\cdot\E[W_G(a_2)W_H(a_2)Y_{a_2}\right] \nonumber\\
-        &=& \E[\hat\gamma_{a_1}]\E[\hat\gamma_{a_2}]
+        &\stackrel{\eqref{eq:E-prod-Y=E-prod-e}}{=}& \E\left[\phi_{a_1}e_{a_1}(\mathbf{S},\,\mathbf{Z})\,\phi_{a_2}e_{a_2}(\mathbf{S},\,\mathbf{Z})\right]\nonumber\\
+        &=& \E\left[\phi_{a_1}e_{a_1}(\mathbf{S},\,\mathbf{Z})\right]\cdot\E[\phi_{a_2}e_{a_2}(\mathbf{S},\,\mathbf{Z})] \nonumber\\
+        &=& \E[\hat\gamma_{a_1}]\,\E[\hat\gamma_{a_2}].
     \end{eqnarray}
     The last equality and Remark~\ref{rmk:unbiasedness} imply \eqref{eq:cov=0}, completing the proof.
 \end{proof}
 
-
 \begin{proof}[Proof of Theorem~\ref{th:consistency}]
-    The proof is analogous to \cite{harshaw2023erl}[Theorem~4.2]. Consider the mean squared error of $\hat\tau_{EARL}$,
+    The proof is analogous to \cite[Theorem~4.2]{harshaw2023erl}. Consider the mean squared error of $\hat\tau_{EARL}$,
     \begin{eqnarray}\label{eq:mse}
-        \E\left[(\hat\tau^{\phantom{1}}_{EARL} - GATE)^2\right] = \frac 1 {N^2} \sum_{a\in\mathcal{A}}\sum_{a'\in\mathcal{A}}\E[(\hat\gamma_a-\gamma_a)(\hat\gamma_{a'}-\gamma_{a'})]. %\stackrel{A\ref{a:1}}{=}\frac 1 N \sum_{a\in\mathcal{A}}\sum_{a'\in\mathcal{A}\colon \mathcal{D}(a)\cap \mathcal{D}(a')\neq\emptyset}(\hat\gamma_a-\gamma_a)(\hat\gamma_{a'}-\gamma_{a'}).
+        \E\left[(\hat\tau^{\phantom{1}}_{EARL} - GATE)^2\right] = \frac 1 {N^2} \sum_{a\in\mathcal{A}}\sum_{a'\in\mathcal{A}}\E[(\hat\gamma_a-\gamma_a)(\hat\gamma_{a'}-\gamma_{a'})].
     \end{eqnarray}
-A given analysis unit $a$ has at most $d_{\mathcal A}d_{\mathcal R}$ analysis units with a shared connected randomisation unit in the experiment graph. Therefore, Lemma~\ref{lem:cov=0} implies that the inner sum in the right-hand side of \eqref{eq:mse} has at most $d_{\mathcal A}d_{\mathcal R}$ terms for each $a$. At the same time, using the Cauchy-Schwarz inequality and Lemma~\ref{lem:kth-abs-moment-bound} we can bound every such term as follows,
+    A given analysis unit $a$ has at most $d_{\mathcal A}d_{\mathcal R}$ analysis units with a shared connected randomisation unit in the experiment graph. Therefore, Lemma~\ref{lem:cov=0} implies that the inner sum on the right-hand side of \eqref{eq:mse} has at most $d_{\mathcal A}d_{\mathcal R}$ non-zero terms for each $a$. At the same time, using the Cauchy--Schwarz inequality and Lemma~\ref{lem:kth-abs-moment-bound} ($k=2$) we can bound every such term as follows,
 \begin{eqnarray*}
     \E[(\hat\gamma_{a}-\gamma_{a})(\hat\gamma_{a'}-\gamma_{a'})] &\le&
-    \sqrt{\E[(\hat\gamma_{a}-\gamma_{a})^2]\E[(\hat\gamma_{a'}-\gamma_{a'})^2]} \nonumber\\
-    &\le& \sqrt{\E[Y_a^2]\E[Y_{a'}^2]}\left(\frac{d_{\mathcal{A}}^2}{q(1-q)p(1-p)}\right)^2\nonumber\\
-    &\le& L\left(\frac{2d_{\mathcal{A}}^2}{q(1-q)p(1-p)}\right)^2
+    \sqrt{\E[(\hat\gamma_{a}-\gamma_{a})^2]\,\E[(\hat\gamma_{a'}-\gamma_{a'})^2]} \nonumber\\
+    &\le& \sqrt{\E[Y_a^2]\,\E[Y_{a'}^2]}\left(2K_w\right)^2
+    \le 4L\,K_w^2
 \end{eqnarray*}
 for any $a,\,a'\in\mathcal{A}$.
 It then follows that
 \begin{eqnarray}\label{eq:O}
-    \frac 1 {N^2} \sum_{a\in\mathcal{A}}\sum_{a'\in\mathcal{A}}\E[(\hat\gamma_a-\gamma_a)(\hat\gamma_{a'}-\gamma_{a'})] &\le& N^{-1}d_{\mathcal A}d_{\mathcal R} L\cdot\left(\frac{2d_{\mathcal{A}}^2}{q(1-q)p(1-p)}\right)^2 \nonumber\\ &=& O(d_{\mathcal R}^{\phantom{1}}d_{\mathcal A}^5/N).
+    \frac 1 {N^2} \sum_{a\in\mathcal{A}}\sum_{a'\in\mathcal{A}}\E[(\hat\gamma_a-\gamma_a)(\hat\gamma_{a'}-\gamma_{a'})] &\le& \frac{d_{\mathcal A}d_{\mathcal R}}{N}\, 4L\,K_w^2 \nonumber\\ &=& O(d_{\mathcal R}^{\phantom{1}}d_{\mathcal A}^3/N).
 \end{eqnarray}
-Together with \eqref{eq:mse} and the condition $d_{\mathcal R}^{\phantom{1}}d_{\mathcal A}^5=o(N)$, the established relation \eqref{eq:O} implies that
+Together with \eqref{eq:mse} and the condition $d_{\mathcal R}^{\phantom{1}}d_{\mathcal A}^3=o(N)$, the established relation \eqref{eq:O} implies that
 $$
-\E\left[(\hat\tau^{\phantom{1}}_{EARL} - GATE)^2\right]\to 0\qquad \textup{as }N\to\infty 
+\E\left[(\hat\tau^{\phantom{1}}_{EARL} - GATE)^2\right]\to 0\qquad \textup{as }N\to\infty,
 $$
 and the consistency of $\hat\tau^{\phantom{1}}_{EARL}$ for GATE follows.
 \end{proof}
@@ -701,276 +822,197 @@ and the consistency of $\hat\tau^{\phantom{1}}_{EARL}$ for GATE follows.
 \subsection{Asymptotic Normality of the EARL Estimator}
 
 \begin{proof}[Proof of Theorem~\ref{th:asymptotic-normality}]
-    Let $F_N$ be the distribution function of the statistic 
+    Let $F_N$ be the distribution function of the statistic
     $$
-        t_N = {(\hat\tau^{\phantom{1}}_{EARL} - GATE)}/\sqrt{V_N}
+        t_N = {(\hat\tau^{\phantom{1}}_{EARL} - GATE)}/\sqrt{V_N},
     $$
-    where $V_N$ is a shorthand for $\textup{var}(\hat\tau^{\phantom{1}}_{EARL})$
+    where $V_N$ is a shorthand for $\var(\hat\tau^{\phantom{1}}_{EARL})$,
     and let $W$ denote the Wasserstein distance.
-    Similarly to \cite[Theorem~4.3]{harshaw2023erl}, we consider variables $X_a = (\hat\gamma_a-\gamma_a)$ with $\hat\gamma_a$ and $\gamma_a$ defined by \eqref{def:hat-gamma-a} and \eqref{def:gamma-a}, respectively. By Remark~\ref{rmk:unbiasedness}, we have that $\E[X_a] = 0$ for all $a\in\mathcal{A}$. Moreover, Lemma~\ref{lem:kth-abs-moment-bound} implies that $X_a$, $a\in\mathcal{A}$, have a finite fourth moment. It also holds for $\sigma^2 := \textup{var}(\sum_{a\in\mathcal{A}}X_a)$ that $\sigma^2=N^2\textup{var}(N^{-1}\sum_{a\in\mathcal{A}}X_a) = N^2\textup{var}(\hat\tau^{\phantom{1}}_{EARL}-GATE)=N^2V_N$. Finally,
-    under assumptions A\ref{a:mu} and A\ref{a:no-autocorrelation}$^*$ we have that 
+    Similarly to \cite[Theorem~4.3]{harshaw2023erl}, we consider the variables $X_a = (\hat\gamma_a-\gamma_a)$. By Remark~\ref{rmk:unbiasedness}, we have that $\E[X_a] = 0$ for all $a\in\mathcal{A}$. Moreover, Lemma~\ref{lem:kth-abs-moment-bound} implies that the $X_a$, $a\in\mathcal{A}$, have finite fourth moments, $\E[X_a^4]\le (2K_w)^4L$, and $\E[|X_a|^3]\le (2K_w)^3\E[|Y_a|^3] \le (2K_w)^3L^{3/4}$ (using $(\E[|Y_a|^3])^{1/3}\le (\E[Y_a^4])^{1/4}$). It also holds for $\sigma^2 := \var(\sum_{a\in\mathcal{A}}X_a)$ that $\sigma^2 = N^2\var(\hat\tau^{\phantom{1}}_{EARL})=N^2V_N$. Finally,
+    under Assumptions A\ref{a:mu} and A\ref{a:no-autocorrelation}$^*$ we have that
     \begin{equation*}
-        X_a \ind \{X_{a'}\mid a'\in\mathcal A\colon \mathcal D(a')\cap \mathcal D(a)=\emptyset\}\qquad\forall\,a\in\mathcal A
+        X_a \ind \{X_{a'}\mid a'\in\mathcal A\colon \mathcal D(a')\cap \mathcal D(a)=\emptyset\}\qquad\forall\,a\in\mathcal A,
     \end{equation*}
-    and therefore for every $a\in\mathcal A$ the variable $X_a$ has a dependency neighbourhood (in the sense of \cite[Definition~3.1]{Ro:11}) with at most $d_{\mathcal R}|\mathcal D(a)|$ elements. Then applying \cite[Theorem~3.5]{Ro:11} and taking into account that $d_{\mathcal R}|\mathcal D(a)|\le d_{\mathcal R}d_{\mathcal A}$ we obtain that
-    \begin{equation*}%\label{eq:Wle}
-        W(F_N,\,\mathcal{N}(0,\,1)) \le \frac{\left(d_{\mathcal R}d_{\mathcal A}\right)^2}{N^3V_N^{3/2}}\sum_{a\in\mathcal A}\E[|\xi_a|^3] + \sqrt{\frac{26}{\pi}}\cdot\frac{\left(d_{\mathcal R}d_{\mathcal A}\right)^{3/2}}{N^2V_N}\sqrt{\sum_{a\in\mathcal A}\E[
-        \xi_a^4]}.
+    and therefore for every $a\in\mathcal A$ the variable $X_a$ has a dependency neighbourhood (in the sense of \cite[Definition~3.1]{Ro:11}) with at most $D:=d_{\mathcal R}d_{\mathcal A}$ elements. Applying \cite[Theorem~3.5]{Ro:11}, we obtain
+    \begin{equation*}
+        W(F_N,\,\mathcal{N}(0,\,1)) \le \frac{D^2}{\sigma^3}\sum_{a\in\mathcal A}\E[|X_a|^3] + \frac{\sqrt{26}D^{3/2}}{\sqrt{\pi}\,\sigma^2}\sqrt{\sum_{a\in\mathcal A}\E[
+        X_a^4]}.
     \end{equation*}
-    Now using Lemma~\ref{lem:kth-abs-moment-bound}, the fact that $(\E[|Y_a|^3])^{1/3}\le (\E[|Y_a|^4])^{1/4}$ for all $a\in\mathcal A$, and Assumption~A\ref{a:non-degeneracy}, we further derive that
+    Now using the moment bounds above and Assumption~A\ref{a:non-degeneracy} (which gives $1/V_N \le N/\delta$ for all sufficiently large $N$), we further derive
     \begin{eqnarray*}
-        W(F,\,\mathcal{N}(0,\,1)) &\stackrel{\textup{Lemma}~\ref{lem:kth-abs-moment-bound}}{\le}&
-        \frac{\left(d_{\mathcal R}d_{\mathcal A}\right)^2}{N^2V_N^{3/2}} \left(\frac{2d^2_{\mathcal A}}{q(1-q)p(1-p)}\right)^3 \E[|Y_a|^3] \\
-        &&{}+ \sqrt{\frac{26}{\pi}}\cdot\frac{\left(d_{\mathcal R}d_{\mathcal A}\right)^{3/2}}{N^{3/2}V_N}\left(\frac{2d^2_{\mathcal A}}{q(1-q)p(1-p)}\right)^2\sqrt{\E[
-        Y_a^4]}\\
-        &\le&\frac{\left(d_{\mathcal R}d_{\mathcal A}\right)^2}{N^2V_N^{3/2}} \left(\frac{2d^2_{\mathcal A}}{q(1-q)p(1-p)}\right)^3 L^{3/4} 
-        \\&&{}+ \sqrt{\frac{26}{\pi}}\cdot\frac{\left(d_{\mathcal R}d_{\mathcal A}\right)^{3/2}}{N^{3/2}V_N}\left(\frac{2d^2_{\mathcal A}}{q(1-q)p(1-p)}\right)^2 L^{1/2}
+        W(F_N,\,\mathcal{N}(0,\,1)) &\le&
+        \frac{D^2(2K_w)^3L^{3/4}}{N^2V_N^{3/2}}
+        + \sqrt{\frac{26}{\pi}}\cdot\frac{D^{3/2}(2K_w)^2\sqrt{L}}{N^{3/2}V_N}\\
+        &\le&\frac{8\,D^2K_w^3L^{3/4}}{\delta^{3/2}\sqrt N}
+        + \sqrt{\frac{26}{\pi}}\cdot\frac{4\,D^{3/2}K_w^2\sqrt{L}}{\delta\sqrt N}
         \\
-        &=& O\left(\frac{d^2_{\mathcal R}d^8_{\mathcal A}}{\sqrt{N}(NV_N)^{3/2}} + \frac{d_{\mathcal R}^{3/2}d_{\mathcal A}^{11/2}}{\sqrt{N}(NV_N)}\right)\\
-        &\stackrel{A\ref{a:non-degeneracy}}{=}& O\left(\frac{d^2_{\mathcal R}d^8_{\mathcal A}}{\sqrt{N}} + \frac{d_{\mathcal R}^{3/2}d_{\mathcal A}^{11/2}}{\sqrt{N}}\right)
-        \\
-        &=& O\left(\frac{d^2_{\mathcal R}d^8_{\mathcal A}}{\sqrt{N}}\right).
-    \end{eqnarray*} 
-    Therefore, if $d^{4}_{\mathcal{R}}d^{16}_{\mathcal{A}}=o(N)$, we have that
+        &=& O\left(\frac{d^2_{\mathcal R}d^5_{\mathcal A}}{\sqrt{N}} + \frac{d_{\mathcal R}^{3/2}d_{\mathcal A}^{7/2}}{\sqrt{N}}\right)
+        \;=\; O\left(\frac{d^2_{\mathcal R}d^5_{\mathcal A}}{\sqrt{N}}\right)\!.
+    \end{eqnarray*}
+    Therefore, if $d^{4}_{\mathcal{R}}d^{10}_{\mathcal{A}}=o(N)$, we have that
     \begin{equation*}
-    W(F_N,\,\mathcal{N}(0,\,1)) \to 0\qquad \textup{as }N\to\infty
+    W(F_N,\,\mathcal{N}(0,\,1)) \to 0\qquad \textup{as }N\to\infty,
     \end{equation*}
     and $\hat\tau^{\phantom{1}}_{EARL}$ is asymptotically normal.
 \end{proof}
 
-% \begin{lemma}\label{lem:Op-1}
-%     Let the random variables $\xi_{k,\,n}$, $n\ge 1$, $k=1,\,\ldots,\,n$, have finite variances bounded by a constant $C_n>0$ uniformly in $k=1,\,\ldots,\,n$. Let the numbers $\Delta_n \ge 1$, $n\ge 1$, be such that for any $n\ge 1$ every variable $\xi_{k,\,n}$, $k=1,\,\ldots,\,n$, has a dependency neighbourhood $\mathcal T_{k,\,n}$ in $\{\xi_{\ell,\,n}\}_{\ell=1}^n$ of size no greater than $\Delta_n$.
+\subsection{A Concentration Lemma for Sparse Locally Dependent Sums}
 
-%     Then 
-%     % \begin{equation}\label{eq:var-bound}
-%     %     \textup{var}\left(\frac 1 n\sum_{k=1}^n \xi_{k,\,n}\right) \le C_n\frac{\Delta_n}{n}\qquad \forall\,n\ge 1
-%     % \end{equation}
-%     % and 
-%     \begin{equation}\label{eq:=Op-1}
-%         \frac 1 n\sum_{k=1}^n (\xi_{k,\,n}-\E[\xi_{k,\,n}]) = O_p\left(\sqrt{C_n\Delta_n/n}\right).
-%     \end{equation}
-%     % and
-%     % \begin{equation}\label{eq:=Op-2}
-%     %     \frac 1 {n^2}\sum_{k=1}^n \sum_{k'=1}^n(\xi_{k,\,n}-\E[\xi_{k,\,n}])(\xi_{k',\,n}-\E[\xi_{k',\,n}]) = O_p\left(\sqrt{}\right)
-%     % \end{equation}    
-% \end{lemma}
-% \begin{proof}
-%     We begin by bounding the variance of $n^{-1}\sum_{k=1}^n \xi_{k,\,n}$,
-%     \begin{equation*}%\label{eq:var=}
-%         \textup{var}\left(\frac 1 n\sum_{k=1}^n \xi_{k,\,n}\right) = \frac 1 {n^2}\sum_{k=1}^n\sum_{k'=1}^n\cov\left(\xi_{k,\,n},\,\xi_{k',\,n}\right).
-%     \end{equation*}
-%     % Let $\mathcal T_{k,\,n}$ be a dependency neighbourhood of $\xi_k$ of size no greater than $\Delta_n$, $k=1,\,\ldots,\,n$.
-%     Since $\E\left[\left(\xi_{k,\,n}-\E[\xi_{k,\,n}]\right)\left(\xi_{k',\,n}-\E[\xi_{k',\,n}]\right)\right]=0$ if $\xi_{k',\,n}\neq\mathcal T_{k,\,n}$, we derive
-%     \begin{eqnarray}
-%         \frac 1 {n^2}\sum_{k=1}^n\sum_{k'=1}^n\cov\left(\xi_{k,\,n},\,\xi_{k',\,n}\right) &=& \frac 1 {n^2}\sum_{k=1}^n\sum_{k': \xi_{k',\,n}\in \mathcal T_{k,\,n}}\cov\left(\xi_{k,\,n},\,\xi_{k',\,n}\right)\nn\\
-%         &\le&
-%            \frac 1 {n^2}\sum_{k=1}^n\sum_{k': \xi_{k',\,n}\in \mathcal T_{k,\,n}}\sqrt{\var\left(\xi_{k,\,n}\right)\var\left(\xi_{k',\,n}\right)}\nn\\  
-%         &\le& \frac{C_n\Delta_n}{n}.
-%     \end{eqnarray}
-%     Now using this bound together with Chebyshev's inequality we conclude that for any $\varepsilon > 0$ it holds that
-%     \begin{eqnarray*}
-%         \Pr\left\{\left|\frac 1 n\sum_{k=1}^n (\xi_{k,\,n}-\E[\xi_{k,\,n}])\right|> \frac{\sqrt{C_n\Delta_n/n}}{\sqrt{\varepsilon}}\right\}  &\le& \varepsilon\frac{\var\left(\frac 1 n\sum_{k=1}^n (\xi_{k,\,n}-\E[\xi_{k,\,n}])\right)}{ C_n\Delta_n/n}\nn\\
-%         &=& \varepsilon\frac{\var\left(\frac 1 n\sum_{k=1}^n \xi_{k,\,n}\right)}{C_n\Delta_n/n}\nn\\
-%         &\le& \varepsilon,
-%     \end{eqnarray*}
-%     which proves \eqref{eq:=Op-1}.
+The proofs of Theorems~\ref{th:asymptotic-variance} and~\ref{th:randomisation-inference} rest on the following elementary concentration bound.
 
-%     % To prove \eqref{eq:=Op-2}, we will act similarly and derive a bound on the variance of the double sum in the left-hand side of \eqref{eq:=Op-2}. To that end, consider an arbitrary $n\ge 1$ and define
-%     % \begin{equation*}
-%     %     \eta_{k,\,k',\,n} = (\xi_{k,\,n}-\E[\xi_{k,\,n}])(\xi_{k',\,n}-\E[\xi_{k',\,n}]),\qquad k,\,k'=1,\,\ldots,\,n.
-%     % \end{equation*}
-%     % We will now bound the number of pairs $(\eta_{k_1,\,k_1',\,n},\,\eta_{k_2,\,k_2',\,n})$ with a non-zero covariance. First, if 
-%     % We identify two scenarios in which the covariance between a pair of variables $\eta_{k_1,\,k_1',\,n}$ and $\eta_{k_2,\,k_',\,n}$ is zero. First, if none of $k_2$, $k_2'$ belong to $\mathcal T_{k_1,\,n} \cup \mathcal T_{k_1',\,n}$
-%     % For any two pairs of indices, $(k_1,\,k_1')$ and $(k_2,\,k_2')$, if none of $k_2$, $k_2'$ belong to $\mathcal T_{k_1,\,n} \cup \mathcal T_{k_1',\,n}$ then 
-    
-%     % To prove \eqref{eq:=Op-2} we define
-%     % \begin{equation*}
-%     %     \eta_{k,\,k',\,n} = (\xi_{k,\,n}-\E[\xi_{k,\,n}])(\xi_{k',\,n}-\E[\xi_{k',\,n}]),\qquad k,\,k'=1,\,\ldots,\,n,
-%     % \end{equation*}
-%     % and 
-%     % \begin{equation*}
-%     %     \mathcal T_{k,\,k',\,n} = \left\{\eta_{m,\,m',\,n}\mid m,\,m'\in\{1,\,\ldots,\,n\}\textup{ and } \{\xi_{m,\,n},\,\xi_{m',\,n}\}\cap (\mathcal T_{k,\,n} \cup \mathcal T_{k',\,n}) \neq \emptyset\right\},
-%     % \end{equation*}    
-%     % for $k,\,k'=1,\,\ldots,\,n$. It can be easily seen that $\mathcal T_{k,\,k',\,n}$ is a dependency neighbourhood of $\eta_{k,\,k',\,n}$ in the collection $\{\eta_{\ell,\,\ell',\,n}\}_{\ell,\,\ell'=1,\,\ldots,\,n}$. 
-%     % % Moreover, since $|\mathcal T_{k,\,n}| \le \Delta_n$ for all $k=1,\,\ldots,\,n$ we have that $|\mathcal T_{k,\,n} \cup \mathcal T_{k',\,n}|\le 2\Delta_n$.
-%     % It means that $\cov(\eta_{k_1,\,k_1',\,n},\allowbreak\eta_{k_2,\,k_2'\,\,n}) = 0$ whenever $\eta_{k_2,\,k_2',\,n}\notin \mathcal T_{k_1,\,k_1',\,n}$.
-% \end{proof}
-
-\begin{lemma}\label{lem:Op-2}
-    Let $\{\xi_k\}_{k=1}^n$, $n\ge 1$, be a collection of random variables with a finite fourth moment bounded by a constant $C_n>0$ uniformly in $k=1,\,\ldots,\,n$. Let the numbers $\Delta_n \ge 1$, $n\ge 1$, be such that for any $n\ge 1$ every variable $\xi_{k,\,n}$, $k=1,\,\ldots,\,n$, has a dependency neighbourhood $\mathcal T_{k,\,n}$ in $\{\xi_{\ell,\,n}\}_{\ell=1}^n$ of size no greater than $\Delta_n$. Furthermore, assume that for any subset $R\subset \{1,\,\ldots,\,n\}$ it holds that
-    \begin{equation}\label{eq:ind}
-         \{\xi_{\ell,\,n}\}_{\ell\in R}\ind \left(\{\xi_{\ell,\,n}\}_{\ell=1}^n \setminus \cup_{\ell\in R}\mathcal T_{\ell,\,n}
-         \right).
-    \end{equation}
-    Finally, let $A_{k,\,k',\,n}$, $n\ge 1$, $k,\,k'=1,\,\ldots,\,n$, are numbers such that $|A_{k,\,k',\,n}|< Q_n$ for all $k$, $k'$, and $n$.
-    
-    Then 
-    \begin{equation}\label{eq:=Op-2}
-        \frac 1 {n^2}\sum_{k=1}^n \sum_{k'=1}^n A_{k,\,k',\,n}(\xi_{k,\,n}-\E[\xi_{k,\,n}])(\xi_{k',\,n}-\E[\xi_{k',\,n}]) = O_p\left({\frac{\Delta_nQ_n\sqrt{C_n}}{n}}\right)
-    \end{equation}
+\begin{lemma}\label{lem:sparse}
+    Let $\mathcal Q$ be a finite index set and $\{\eta_\pi\}_{\pi\in\mathcal Q}$ a collection of square-integrable random variables with $\E[\eta_\pi^2]\le B$ for all $\pi\in\mathcal Q$. Suppose that for every $\pi\in\mathcal Q$,
+    \begin{equation*}
+        \#\{\rho\in\mathcal Q\colon \cov(\eta_\pi,\,\eta_\rho)\neq 0\} \le \kappa.
+    \end{equation*}
+    Then, for any $n\ge 1$,
+    \begin{equation*}
+        \frac 1{n^2}\sum_{\pi\in\mathcal Q}(\eta_\pi - \E[\eta_\pi]) = O_p\left(\frac{\sqrt{|\mathcal Q|\,\kappa\, B}}{n^2}\right).
+    \end{equation*}
 \end{lemma}
 \begin{proof}
-    % Similarly to the proof of Lemma~\ref{lem:Op-1} 
-    We begin by bounding the variance of the double sum in the left-hand side of \eqref{eq:=Op-2}. To that end, define 
+    By the Cauchy--Schwarz inequality, every non-zero covariance satisfies $|{\cov(\eta_\pi,\eta_\rho)}|\le \sqrt{\var(\eta_\pi)\var(\eta_\rho)}\le B$. Hence
     \begin{equation*}
-        \eta_{k,\,k',\,n} = A_{k,\,k',\,n}(\xi_{k,\,n}-\E[\xi_{k,\,n}])(\xi_{k',\,n}-\E[\xi_{k',\,n}]),\qquad n\ge 1,\quad k,\,k'=1,\,\ldots,\,n.
+        \var\left(\frac 1{n^2}\sum_{\pi\in\mathcal Q}\eta_\pi\right) = \frac 1{n^4}\sum_{\pi\in\mathcal Q}\sum_{\rho\in\mathcal Q}\cov(\eta_\pi,\,\eta_\rho) \le \frac{|\mathcal Q|\,\kappa\,B}{n^4},
     \end{equation*}
-    Note that 
-    \begin{eqnarray}\label{eq:var-eta}
-        \var(\eta_{k,\,k',\,n}) &\le& \E[\eta_{k,\,k',\,n}^2]\nn\\
-        &=& \E[A^2_{k,\,k',\,n}(\xi_{k,\,n}-\E[\xi_{k,\,n}])^2(\xi_{k',\,n}-\E[\xi_{k',\,n}])^2]\nn\\
-        &\le& Q_n^2\sqrt{\E[(\xi_{k,\,n}-\E[\xi_{k,\,n}])^4]\E[(\xi_{k',\,n}-\E[\xi_{k',\,n}])^4]}\nn\\
-        &\le& Q_n^2C_n
-    \end{eqnarray}
-    for all $n\ge 1$ and all $k,\,k'=1,\,\ldots,\,n$.
-    
-    Now consider an arbitrary $n\ge 1$ and an arbitrary pair of indices $(k_1,\,k_1')$. For another pair $(k_2,\,k_2')$ to be such that $\cov(\eta_{k_1,\,k_1',\,n},\,\eta_{k_1,\,k_1',\,n})$ is non-zero, one of the following conditions must hold:
-    \begin{equation*}
-        \begin{array}{cl}
-            \textup{(a)} & k_2 \in \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}\textup{ and } k_2' \in \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}\\
-            \textup{(b)} & k_2 \in \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}\textup{ and } k_2' \notin \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}\textup{ and } k_2' \in \mathcal T_{k_2,\,n}\\    
-            \textup{(c)} & k_2' \in \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}\textup{ and } k_2 \in \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}\\
-            \textup{(d)} & k_2' \in \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}\textup{ and } k_2 \notin \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}\textup{ and } k_2 \in \mathcal T_{k_2',\,n}. 
-        \end{array}
-    \end{equation*}
-    Indeed, suppose that all of (a)--(d) are false. In that case either $k_2$ or $k_2'$ lie outside of $\mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}$. If none of the two does not belong to this set then by \eqref{eq:ind} we have that $\eta_{k_1,\,k_1',\,n}$ and $\eta_{k_2,\,k_2',\,n}$ and the covariation between the two is zero. If $k_2\in \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}$ and $k_2'\notin \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}$ then $k_2'\notin T_{k_2,\,n}$ and by \eqref{eq:ind} $\eta_{k_2',\,n}$ is independent of $\eta_{k_1,\,k_1',\,n}$ and $\xi_{k_2,\,n}$. Then 
-    \begin{eqnarray*}
-    \cov(\eta_{k_1,\,k_1',\,n},\,\eta_{k_2,\,k_2',\,n}) &=& \E[\eta_{k_1,\,k_1',\,n}A_{k,\,k',\,n}(\xi_{k_2,\,n}-\E[\xi_{k_2,\,n}])(\xi_{k_2',\,n}-\E[\xi_{k_2',\,n}])]\nn\\
-        && {}- \E[\eta_{k_1,\,k_1',\,n}]\E[A_{k,\,k',\,n}(\xi_{k_2,\,n}-\E[\xi_{k_2,\,n}])(\xi_{k_2',\,n}-\E[\xi_{k_2',\,n}])]\nn\\
-        &=& 
-        A_{k,\,k',\,n}\E[\xi_{k_2',\,n}-\E[\xi_{k_2',\,n}]] \cov(\eta_{k_1,\,k_1',\,n},\,\xi_{k_2,\,n}-\E[\xi_{k_2,\,n}])\nn\\
-        &=& 0.
-    \end{eqnarray*}
-    The case where $k_2\notin \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}$ and $k_2\in \mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}$ is fully analogous.
-    Thus, one of (a)-(d) must hold for the covariance to be different from zero.
-
-    Since $|\mathcal T_{k_1,\,n}\cup \mathcal T_{k_1',\,n}|\le 2\Delta_n$ the maximum number of pairs $(k_2,\,k_2')$ satisfying (a) is $4\Delta_n^2$. As for (b), the maximum number of pairs satisfying that condition is $2\Delta_n^2$. The bounds for (c) and (d) are analogous. Combining this with \eqref{eq:var-eta} we conclude that the variance of the double-sum in the left-hand side of \eqref{eq:Op-2} satisfies the following inequality,
-    \begin{eqnarray}\label{eq:var-bounsd-2}
-        \var\left(\frac 1 {n^2}\sum_{k=1}^n \sum_{k'=1}^n \eta_{k,\,k',\,n}\right) \le \frac 1 {n^4} n^2 12\Delta_n^2Q_n^2C_n = \frac{12\Delta_n^2Q_n^2C_n}{n^2}.
-    \end{eqnarray}
-    Using this last inequality together with Chebyshev's inequality we obtain that for any $\varepsilon >0$ it holds that
-    \begin{eqnarray*}
-                \Pr\left\{\left|\frac 1 {n^2}\sum_{k=1}^n \sum_{k'=1}^n (\xi_{k,\,n}-\E[\xi_{k,\,n}])(\xi_{k',\,n}-\E[\xi_{k',\,n}])\right|> \frac{\sqrt{12\Delta_n^2Q_n^2C_n/n^2}}{\sqrt{\varepsilon}}\right\} &&\\
-                \le \varepsilon\frac{\var\left(\frac 1 {n^2}\sum_{k=1}^n \sum_{k'=1}^n \eta_{k,\,k',\,n}\right)}{ 12\Delta_n^2Q_n^2C_n/n^2}&& \\
-                \le\varepsilon,
-    \end{eqnarray*}
-    which gives \eqref{eq:=Op-2}.
+    and the claim follows from Chebyshev's inequality.
 \end{proof}
+
+\subsection{Unbiased Variance Estimation}\label{app:variance}
+
+Throughout this subsection, Assumption~A\ref{a:4}$^*$ is in force; recall that it implies Assumptions~A\ref{a:mu} and~A\ref{a:4}, that $\mu_a(x,\,y) = B_0^a+B_1^ax+B_2^axy$, and that $\gamma_a = B_2^a$. We will use the following elementary moment identities, valid under Assumption~A\ref{a:1} (all sums over $r,\,r'\in\mathcal D(a)$, cross terms vanish because $\E[\tilde Z_r]=0$ and the indicators are independent):
+\begin{equation}\label{eq:phi-moments}
+    \E[\phi_a] = 0,\qquad \E[\phi_a G_a] = 0,\qquad \E[\phi_a F_a] = 1,
+\end{equation}
+where the last identity follows from
+$\E[(S_r/q)\tilde Z_r\,S_{r'}Z_{r'}] = \mathbf 1\{r=r'\}\E[S_r/q\cdot S_r]\E[\tilde Z_rZ_r] = \mathbf 1\{r=r'\}$, summed over $r'$ and divided by $|\mathcal D(a)|$. In particular, under Assumption~A\ref{a:4}$^*$,
+\begin{equation}\label{eq:gamma-unbiased-astar}
+    \E[\hat\gamma_a] = \E[\phi_a e_a(\mathbf S,\,\mathbf Z)] = B_1^a\E[\phi_aG_a] + B_2^a\E[\phi_aF_a] = B_2^a = \gamma_a.
+\end{equation}
+Analogously, for any two analysis units,
+\begin{equation}\label{eq:A12}
+    \E[\phi_{a_1}\phi_{a_2}] = \frac{|\mathcal D(a_1)\cap\mathcal D(a_2)|}{q\,p(1-p)},
+\end{equation}
+which vanishes for non-overlapping pairs.
+
+\begin{proof}[Proof of Theorem~\ref{th:asymptotic-variance}]
+    \emph{Step 1: unbiasedness.} Fix a pair $(a_1,\,a_2)\in\mathcal P$ with $a_1\neq a_2$ and write $S_{a_1,a_2} := \mathbf c_{a_1,a_2}^{\top}(\mathbf m_{a_1,a_2}-\E[\mathbf m_{a_1,a_2}])$ for the linear part of \eqref{def:R}. By construction, $\mathbf c_{a_1,a_2}$ solves the moment equations
+    \begin{equation}\label{eq:moment-system}
+        \E\left[S_{a_1,a_2}\, f_k(a_1)f_l(a_2)\right] = \mathbf 1\{k=l=2\},\qquad k,\,l\in\{0,\,1,\,2\},
+    \end{equation}
+    where $f_0(a)=1$, $f_1(a)=G_a$, $f_2(a)=F_a$: for $(k,\,l)\neq(0,\,0)$ these are exactly the eight rows of the linear system $\Sigma_{a_1,a_2}\mathbf c = \mathbf u$ (the left-hand side of \eqref{eq:moment-system} equals the covariance of $S_{a_1,a_2}$ with the monomial $f_kf_l$, since $\E[S_{a_1,a_2}]=0$), and for $(k,\,l)=(0,\,0)$ the equation holds automatically because $S_{a_1,a_2}$ is centred. Assumption~A\ref{a:lambda0} guarantees that the system has a unique solution.
+
+    Under Assumptions~A\ref{a:no-autocorrelation}$^*$ and A\ref{a:4}$^*$, conditioning on $(\mathbf S,\,\mathbf Z)$ and using Lemma~\ref{lem:cov=0}(a),
+    \begin{eqnarray*}
+        \E[Y_{a_1}Y_{a_2}S_{a_1,a_2}] &=& \E[e_{a_1}(\mathbf S,\,\mathbf Z)\,e_{a_2}(\mathbf S,\,\mathbf Z)\,S_{a_1,a_2}]\\
+        &=& \sum_{k,\,l\in\{0,1,2\}}B^{a_1}_kB^{a_2}_l\,\E\left[S_{a_1,a_2}f_k(a_1)f_l(a_2)\right]\\
+        &\stackrel{\eqref{eq:moment-system}}{=}& B_2^{a_1}B_2^{a_2} \;\stackrel{\eqref{eq:gamma-unbiased-astar}}{=}\; \E[\hat\gamma_{a_1}]\,\E[\hat\gamma_{a_2}].
+    \end{eqnarray*}
+    Since $Y_{a_1}Y_{a_2}\phi_{a_1}\phi_{a_2} = \hat\gamma_{a_1}\hat\gamma_{a_2}$ identically, we conclude
+    \begin{equation}\label{eq:pair-unbiased}
+        \E[Y_{a_1}Y_{a_2}R_{a_1,a_2}] = \E[\hat\gamma_{a_1}\hat\gamma_{a_2}] - \E[\hat\gamma_{a_1}]\E[\hat\gamma_{a_2}] = \cov(\hat\gamma_{a_1},\hat\gamma_{a_2}).
+    \end{equation}
+    For the diagonal terms, the same argument applies with the monomial set $(G_a,\,F_a,\,G_a^2,\,G_aF_a,\,F_a^2)$: the moment equations make $\E[e_a^2\,S_{a,a}] = (B_2^a)^2$, while $\E[\varepsilon_a^2 S_{a,a}]$ vanishes by Assumption~A\ref{a:no-autocorrelation}$^*$ and centredness of $S_{a,a}$, so, using $\E[Y_a^2\mid\mathbf S,\,\mathbf Z] = e_a^2 + \E[\varepsilon_a^2]$,
+    \begin{equation*}
+        \E[Y_a^2R_{a,a}] = \E[\hat\gamma_a^2] - \gamma_a^2 = \var(\hat\gamma_a).
+    \end{equation*}
+    Finally, for $(a_1,\,a_2)\notin\mathcal P$ we have $R_{a_1,a_2}=0$ and $\cov(\hat\gamma_{a_1},\hat\gamma_{a_2})=0$ by Lemma~\ref{lem:cov=0}(b). Summing over all pairs,
+    \begin{equation*}
+        \E[\hat V] = \frac 1{N^2}\sum_{a_1}\sum_{a_2}\cov(\hat\gamma_{a_1},\,\hat\gamma_{a_2}) = \var(\hat\tau^{\phantom{1}}_{EARL})
+    \end{equation*}
+    for every $N$, which is the first claim.
+
+    \emph{Step 2: concentration.} We apply Lemma~\ref{lem:sparse} to the collection $\eta_\pi = Y_{a_1}Y_{a_2}R_{a_1,a_2}$, $\pi=(a_1,\,a_2)\in\mathcal P$, with $n=N$. First, the weights are uniformly bounded: $|\phi_{a_1}\phi_{a_2}|\le K_w^2$ by Lemma~\ref{lem:weight-bound}; all monomials in $\mathbf m_{a_1,a_2}$ take values in $[0,\,1]$, so $\|\mathbf m - \E[\mathbf m]\|_2\le \sqrt 8$, while $\|\mathbf c_{a_1,a_2}\|_2 \le \lambda_0^{-1}\|\mathbf u\|_2=\lambda_0^{-1}$ by Assumption~A\ref{a:lambda0}; hence
+    \begin{equation}\label{eq:CR}
+        |R_{a_1,a_2}| \le K_w^2 + \sqrt 8/\lambda_0 =: C_R = O(d^2_{\mathcal A}).
+    \end{equation}
+    Consequently, using the Cauchy--Schwarz inequality and $\E[Y_a^4]\le L$,
+    \begin{equation*}
+        \E[\eta_\pi^2] \le C_R^2\,\sqrt{\E[Y_{a_1}^4]\,\E[Y_{a_2}^4]} \le C_R^2L =: B.
+    \end{equation*}
+    Next, $|\mathcal P| \le N(d_{\mathcal A}d_{\mathcal R}+1) \le 2Nd_{\mathcal A}d_{\mathcal R}$. Under Assumptions~A\ref{a:mu} and A\ref{a:no-autocorrelation}$^*$, each $\eta_{(a_1,a_2)}$ is a function of the indicators $\{(S_r,\,Z_r)\colon r\in\mathcal D(a_1)\cup\mathcal D(a_2)\}$ and the errors $(\varepsilon_{a_1},\,\varepsilon_{a_2})$; therefore $\eta_\pi$ and $\eta_\rho$ are independent (hence uncorrelated) unless the two pairs share an analysis unit or a connected randomisation unit. For a fixed $\pi=(a_1,\,a_2)$, any such $\rho=(a_3,\,a_4)$ must have $a_3$ or $a_4$ in $\mathcal T(a_1)\cup\mathcal T(a_2)\cup\{a_1,\,a_2\}$, a set of at most $2(d_{\mathcal A}d_{\mathcal R}+1)$ elements, and its other coordinate ranges over at most $d_{\mathcal A}d_{\mathcal R}+1$ units (to stay within $\mathcal P$). Hence
+    \begin{equation*}
+        \kappa \le 2\cdot 2(d_{\mathcal A}d_{\mathcal R}+1)^2\le 8(d_{\mathcal A}d_{\mathcal R}+1)^2 \le 32\,d^2_{\mathcal A}d^2_{\mathcal R}.
+    \end{equation*}
+    Lemma~\ref{lem:sparse} now gives
+    \begin{eqnarray*}
+        \hat V - \var(\hat\tau^{\phantom{1}}_{EARL}) &=& O_p\left(\frac{\sqrt{2Nd_{\mathcal A}d_{\mathcal R}\cdot 32d^2_{\mathcal A}d^2_{\mathcal R}\cdot C_R^2L}}{N^2}\right)\\ &=& O_p\left(\frac{(d_{\mathcal A}d_{\mathcal R})^{3/2}C_R}{N^{3/2}}\right).
+    \end{eqnarray*}
+    Dividing by $\var(\hat\tau_{EARL})\ge\delta/N$ (Assumption~A\ref{a:non-degeneracy}) and using \eqref{eq:CR},
+    \begin{equation*}
+        \frac{\hat V}{\var(\hat\tau^{\phantom{1}}_{EARL})} - 1 = O_p\left(\frac{d^{7/2}_{\mathcal A}d^{3/2}_{\mathcal R}}{\sqrt N}\right) = o_p(1),
+    \end{equation*}
+    where the final step holds because $d^7_{\mathcal A}d^3_{\mathcal R}\le d^{10}_{\mathcal A}d^4_{\mathcal R} = o(N)$.
+
+    \emph{Step 3: asymptotic validity.} Assumption~A\ref{a:4}$^*$ implies Assumptions~A\ref{a:mu} and A\ref{a:4}, so all conditions of Theorem~\ref{th:asymptotic-normality} hold and $(\hat\tau_{EARL}-GATE)/\sqrt{V_N}\stackrel{d}{\to}\mathcal N(0,\,1)$. Writing
+    \begin{equation*}
+        \frac{\hat\tau^{\phantom{1}}_{EARL} - GATE}{\sqrt{\hat V}} = \frac{\hat\tau^{\phantom{1}}_{EARL} - GATE}{\sqrt{V_N}}\cdot\sqrt{\frac{V_N}{\hat V}}
+    \end{equation*}
+    and applying Slutsky's theorem with $\hat V/V_N\stackrel{p}{\to}1$ completes the proof.
+\end{proof}
+
+\subsection{Randomisation Inference}\label{app:ri}
 
 \begin{proof}[Proof of Theorem~\ref{th:randomisation-inference}]
-    % The proof follows the ideas from \cite[Appendix A.1]{shi2025scalableanalysisbipartiteexperiments} but contains an important correction. The corresponding result from that original source
+    Under the strong null \eqref{def:strong-null} write $e_a$ for the constant value of $e_a(\cdot,\,\cdot)$, so that $Y_a = e_a + \varepsilon_a$ with, by Assumption~A\ref{a:no-autocorrelation}$^*$, the errors jointly independent of each other and of $(\mathbf S,\,\mathbf Z)$; boundedness gives $|e_a|\le C_Y$ and $\E[\varepsilon_a^4]\le 16C_Y^4$. Denote $A_{a_1,a_2} := \E[\phi_{a_1}\phi_{a_2}]$, which by \eqref{eq:A12} vanishes unless $(a_1,\,a_2)\in\mathcal P$ and satisfies $|A_{a_1,a_2}|\le d_{\mathcal A}/(q\,p(1-p)) = K_w$ (cf.~\eqref{def:Kw}).
 
-    Let $\mathcal T(a)$ be the set of analysis units that share a common connected randomisation unit with $a$, i.e.,
-    \begin{equation*}
-        \mathcal T(a) = \{a'\in\mathcal A\mid \mathcal D(a')\cap \mathcal D(a) \neq \emptyset\}.
-    \end{equation*}
-    
-    Denote
-    \begin{equation*}
-        \tilde V = \textup{var}\left(\frac 1 N \sum_{i=1}^N \phi_a(\tilde{\mathbf S},\,\tilde{\mathbf Z})Y_a
-        %\ \bigg|\ \mathbf S,\,\mathbf Z
-        \right).
-    \end{equation*}
-    Under Assumption~A\ref{a:1} it holds that
-    \begin{equation}\label{eq:E-phi=0}
-        \E[\phi_a({\mathbf S}_j,\,{\mathbf Z}_j)] = 0\qquad \forall\,a\in\mathcal A.
-    \end{equation}
-    Furthermore, since $(\tilde{\textbf S}_j,\,\tilde{\textbf Z}_j)$, $j=1,\,\ldots,\,J$, are independent of $(\{Y_a\}_{a\in\mathcal A},\,\mathbf S,\,\mathbf Z)$ we have that
-    \begin{eqnarray}\label{eq:cov-phi-tilde}
-        \textup{cov}(\phi_{a_1}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_1},\,\phi_{a_2}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_2}) &=& \E[\phi_{a_1}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_1}\phi_{a_2}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_2}] 
-        \nonumber\\&&{}- \E[\phi_{a_1}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_1}]\E[\phi_{a_2}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_2}]
-        \nonumber\\
-        &=&\E[\phi_{a_1}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)\phi_{a_2}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)]\E[Y_{a_1}Y_{a_2}] 
-        \nonumber\\&&{}- \E[\phi_{a_1}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)]\E[Y_{a_1}]\E[\phi_{a_2}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)]\E[Y_{a_2}]
-        \nonumber\\
-        &=& \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S}_j,\,{\mathbf Z})]\E[Y_{a_1}Y_{a_2}]
-    \end{eqnarray}
-    for any $a_1,\,a_2\in\mathcal A$ and any $j=1,\,\ldots,\,J$, where in the last equality we took into account \eqref{eq:E-phi=0} and the fact that the vector $(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)$ has the same distribution as $({\mathbf S},\,{\mathbf Z})$. In addition, as long as $a_1$ and $a_2$ do not have connected randomisation units in common, i.e., $a_2\notin \mathcal{T}(a_1)$, the random variables $\phi_{a_1}({\mathbf S},\,{\mathbf Z})$ and $\phi_{a_2}({\mathbf S},\,{\mathbf Z})$ are independent due to Assumption~A\ref{a:1} and hence \begin{equation}\label{eq:E-prod-phi=0}
-        a_2\notin\mathcal T(a_1) \implies \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})] = \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})]\E[\phi_{a_2}({\mathbf S},\,{\mathbf Z})] \stackrel{\eqref{eq:E-phi=0}}{=} 0.
-    \end{equation}
-    Thus,
-    \begin{eqnarray}\label{eq:tilde-V=}
-        \tilde V &=& \frac 1 {N^2} \sum_{a_1\in\mathcal A} \sum_{a_2\in\mathcal A} \textup{cov}(\phi_{a_1}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_1},\,\phi_{a_2}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_2}) \nonumber\\
-        &\stackrel{\eqref{eq:cov-phi-tilde}}{=}& \frac 1 {N^2} \sum_{a_1\in\mathcal A} \sum_{a_2\in\mathcal A} \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})]\E[Y_{a_1}Y_{a_2}]\nonumber\\
-        &\stackrel{\eqref{eq:E-prod-phi=0}}{=}& \frac 1 {N^2} \sum_{a_1\in\mathcal A} \sum_{a_2\in\mathcal \mathcal T(a_1)} \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})]\E[Y_{a_1}Y_{a_2}]
-    \end{eqnarray}`
-    At the same time, taking into account the strong null \eqref{def:strong-null} and using Lemma~\ref{lem:cov=0} we derive
+    \emph{Step 1: the target variance.} Under the null, $\E[\phi_aY_a] = e_a\E[\phi_a] = 0$, and for any $a_1,\,a_2$ (including $a_1=a_2$), using the independence of the errors from $(\mathbf S,\,\mathbf Z)$,
     \begin{eqnarray*}
-        \textup{var}\left(\hat\tau^{\phantom{1}}_{EARL}\right) &=& \frac 1 {N^2}\sum_{a_1\in\mathcal A}\sum_{a_2\in\mathcal A}\E\left[(\hat\gamma_{a_1} - \gamma_{a_1})(\hat\gamma_{a_2} - \gamma_{a_2}) \right] \nonumber\\
-        &\stackrel{\textup{Lemma}~\ref{lem:cov=0}}{=}&
-        \frac 1 {N^2}\sum_{a_1\in\mathcal A}\sum_{a_2\in\mathcal T(a_1)}\E\left[(\hat\gamma_{a_1} - \gamma_{a_1})(\hat\gamma_{a_2} - \gamma_{a_2}) \right]\nonumber\\
-        &\stackrel{\textup{$H_0^*$}}{=}& 
-        \frac 1 {N^2}\sum_{a_1\in\mathcal A}\sum_{a_2\in\mathcal T(a_1)}\E\left[\hat\gamma_{a_1}\hat\gamma_{a_2} \right]\nonumber\\
-        &=&\frac 1 {N^2} \sum_{a_1\in\mathcal A} \sum_{a_2\in\mathcal T(a_1)} \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})Y_{a_1}\phi_{a_2}({\mathbf S},\,{\mathbf Z})Y_{a_2}].
+        \E[\phi_{a_1}\phi_{a_2}Y_{a_1}Y_{a_2}] &=& \E[\phi_{a_1}\phi_{a_2}]\,\E[Y_{a_1}Y_{a_2}].
     \end{eqnarray*}
-    Combining the last equality with \eqref{eq:tilde-V=} and using the Cauchy-Schwarz inequality as well as the fact that $|\mathcal T(a)|\le d_{\mathcal R}d_{\mathcal A}$ for all $a\in\mathcal A$, we obtain that
-    \begin{eqnarray}\label{eq:var-tilde-V=O}
-        \left|\textup{var}\left(\hat\tau^{\phantom{1}}_{EARL}\right)- \tilde V\right| &=& \frac 1 {N^2} \sum_{a_1\in\mathcal A} \sum_{a_2\in\mathcal T(a_1)} \textup{cov}(Y_{a_1}Y_{a_2},\,\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})) \nonumber\\
-        &\le& \frac 1 {N^2} \sum_{a_1\in\mathcal A} \sum_{a_2\in\mathcal T(a_1)} \sqrt{\textup{var}\left(Y_{a_1}Y_{a_2}\right)\textup{var}\left(\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})\right)}\nonumber\\
-        &\stackrel{\textup{Lemma}~\ref{lem:weight-bound}}{=}& \frac{d_{\mathcal R}d_{\mathcal A}}{N}\sqrt{L}\left(\frac{d_{\mathcal A}}{q(1-q)p(1-p)}\right)^2\nonumber\\
-        &=&O\left(\frac{d_{\mathcal R}d_{\mathcal A}^3}{N}\right).
-    \end{eqnarray}
-
-    Next, let us consider the difference $\hat V_{RI} - \tilde V$. As in \cite{shi2025scalableanalysisbipartiteexperiments}, we write $\hat V_{RI}$ as
-    \begin{eqnarray}\label{eq:hat-V-RI}
-        \hat V_{RI} &=& \textup{var}\left(\frac 1 N \sum_{a\in\mathcal A}\phi_a(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_a\  \bigg|\ \mathbf S,\,\mathbf Z\right) \nonumber\\
-        &=&
-        \E\left[\left(\frac 1 N \sum_{a\in\mathcal A}\phi_a(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_a\right)^2\  \bigg|\ \mathbf S,\,\mathbf Z\right] + \left(\E\left[\frac 1 N \sum_{a\in\mathcal A}\phi_a(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_a\  \bigg|\ \mathbf S,\,\mathbf Z\right]\right)^2\nonumber\\
-        &=& \E\left[\frac 1 {N^2} \sum_{a_1\in\mathcal A}\sum_{a_2\in\mathcal A}\phi_{a_1}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_1}\phi_{a_2}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)Y_{a_2}\  \bigg|\ \mathbf S,\,\mathbf Z\right]\nonumber\\
-        &=&
-        \frac 1 {N^2} \sum_{a_1\in\mathcal A}\sum_{a_2\in\mathcal A}\E[\phi_{a_1}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)\phi_{a_2}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)]\E\left[Y_{a_1}Y_{a_2}\mid\mathbf S,\,\mathbf Z\right]
-        \nonumber\\
-        % &=&\frac 1 {N^2} \sum_{a_1\in\mathcal A}\sum_{a_2\in\mathcal A}\E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})]\E\left[Y_{a_1}Y_{a_2}\mid\mathbf S,\,\mathbf Z\right]
-        &\stackrel{\textup{Lemma}~\ref{lem:cov=0}}{=}&
-        \frac 1 {N^2} \sum_{a_1\in\mathcal A}\sum_{a_2\in\mathcal A}\E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})]e_{a_1}(\mathbf S,\,\mathbf Z)e_{a_2}(\mathbf S,\,\mathbf Z).
-    \end{eqnarray}
-    % Under Assumptions A\ref{a:mu} and A\ref{a:4} it holds that
-    Combining \eqref{eq:tilde-V=} and \eqref{eq:hat-V-RI} we obtain that
-    % and taking into account that $ \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})] = 0$ whenever $a_2\notin\mathcal T(a_1)$, we derive
-    \begin{eqnarray}
-        \left|\hat V_{RI} - \tilde V\right| &=& \frac 1 {N^2} \sum_{a_1\in\mathcal A} \sum_{a_2\in\mathcal A} \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})]\left(e_{a_1}(\mathbf S,\,\mathbf Z)e_{a_2}(\mathbf S,\,\mathbf Z)-\E[Y_{a_1}Y_{a_2}]\right)
-    \end{eqnarray}
-    Now, consider random variables 
-    $$
-        \xi_a= 
-        e_{a}(\mathbf S,\,\mathbf Z)-\E[Y_{a}],\qquad a\in\mathcal A
-    $$
-    and numbers
-    $$
-        A_{a_1,\,a_2} = \E[\phi_{a_1}({\mathbf S},\,{\mathbf Z})\phi_{a_2}({\mathbf S},\,{\mathbf Z})],\qquad a_1,\,a_2\in\mathcal A
-    $$
-    First note that under Assumptions~A\ref{a:1} and Assumptions~A\ref{a:mu} each of $\xi_a$, $a\in\mathcal A$, has a dependency neighbourhood in $\{\xi_{a'}\}_{a'\in\mathcal A}$ of size at most $d_{\mathcal A}d_{\mathcal{R}}$ and, in addition, the collection $\{\xi_{a'}\}_{a'\in\mathcal A}$ satisfies the property \eqref{eq:ind}. Furthermore, since each $Y_a$ has a finite fourth moment bounded by $L$ (uniformly in $a$ and $N$), the variables $\xi_a$ satisfy the same property with the constant $16L$. Finally, by Lemma~\ref{lem:weight-bound} we have that 
-    $$
-        |A_{a_1,\,a_2}| \le \frac{d_{\mathcal A}^2}{q(1-q)p(1-p)}\qquad \forall\,a_1,\,a_2\in\mathcal A.
-    $$
-    Applying Lemma~\ref{lem:Op-2} we establish that
-    \begin{equation}\label{eq:hat-var-ri-tilde-var=O}
-        \hat V_{RI} - \tilde V = O_p\left(\frac{d_{\mathcal{R}}d_{\mathcal A}^3}{N}\right)
+    Consequently,
+    \begin{equation}\label{eq:var-null}
+        \var(\hat\tau^{\phantom{1}}_{EARL}) = \frac 1{N^2}\sum_{a_1}\sum_{a_2}A_{a_1,a_2}\,\E[Y_{a_1}Y_{a_2}] =: \tilde V.
     \end{equation}
-    From \eqref{eq:var-tilde-V=O} and \eqref{eq:hat-var-ri-tilde-var=O} it follows that
-    \begin{equation*}
-        \hat V_{RI} - \textup{var}\left(\hat\tau^{\phantom{1}}_{EARL}\right) = O_p\left(\frac{d_{\mathcal{R}}d_{\mathcal A}^3}{N}\right)
-    \end{equation*}
-    Under Assumption~A\ref{a:non-degeneracy} this further implies that
-    \begin{eqnarray}\label{eq:pto-1}
-        \frac{\hat V_{RI}}{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)} &=&
-        1 + \frac{O_p(d_{\mathcal{R}}d_{\mathcal A}^3/N)}{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}\nn\\
-        &=& 1 + \frac{O_p(d_{\mathcal{R}}d_{\mathcal A}^4/N)}{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}\nn\\
-        &\stackrel{d_{\mathcal{R}}^4d_{\mathcal A}^{16}=o(N)}{=}& 1 + \frac{o_p(N^{-5/4})}{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}\nn\\
-        &\stackrel{A\ref{a:non-degeneracy}}{=}& 1 + o_p(N^{-5/4})O(N)\nn\\
-        &=& 1 + o_p(N^{-1/4})\nn\\
-        &=& 1 + o_p(1).
-    \end{eqnarray}
-    Finally, 
-    $$
-        \frac{\hat\tau^{\phantom{1}}_{EARL}}{\sqrt{\hat V_{RI}}} = \frac{\hat\tau^{\phantom{1}}_{EARL}}{\sqrt{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}} \cdot \sqrt{\frac{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}{\hat V_{RI}}},
-    $$
-    and under the null \eqref{def:strong-null} the first term in the right-hand side converges in distribution to a standard normal random variable by Theorem~\ref{th:asymptotic-normality}and the second term tends to 1 in probability by \eqref{eq:pto-1}. Applying Slutsky's theorem then gives
-    $$
-        \frac{\hat\tau^{\phantom{1}}_{EARL}}{\sqrt{\hat V_{RI}}} \stackrel{d}{\to} \mathcal N(0,\,1),
-    $$
-    which completes the proof.
-\end{proof}
 
+    \emph{Step 2: the infinite-$J$ limit of $\hat V_{RI}$.} Conditionally on the data $\mathcal G = \sigma(\{Y_a\}_{a\in\mathcal A},\,\mathbf S,\,\mathbf Z)$, the copies $W_j := \hat\tau_{EARL}(\tilde{\mathbf S}_j,\,\tilde{\mathbf Z}_j)$, $j=1,\ldots,J$, are independent and identically distributed with
+    \begin{equation}\label{eq:vD}
+        \E[W_j\mid \mathcal G] = 0,\qquad \var(W_j\mid\mathcal G) = \frac 1{N^2}\sum_{a_1}\sum_{a_2}A_{a_1,a_2}Y_{a_1}Y_{a_2} =: v.
+    \end{equation}
+    We claim $v/\tilde V\stackrel{p}{\to}1$. Indeed, $\E[v]=\tilde V$, and
+    \begin{equation*}
+        v - \tilde V = \frac 1{N^2}\sum_{(a_1,a_2)\in\mathcal P}A_{a_1,a_2}\left(Y_{a_1}Y_{a_2} - \E[Y_{a_1}Y_{a_2}]\right).
+    \end{equation*}
+    Under the null, $Y_{a_1}Y_{a_2}$ is a function of $(\varepsilon_{a_1},\,\varepsilon_{a_2})$ alone; by the joint independence of the errors, two terms $\eta_{(a_1,a_2)} = A_{a_1,a_2}Y_{a_1}Y_{a_2}$ and $\eta_{(a_3,a_4)}$ are independent unless $\{a_1,\,a_2\}\cap\{a_3,\,a_4\}\neq\emptyset$, which for a fixed pair leaves at most $\kappa = 4(d_{\mathcal A}d_{\mathcal R}+1)$ partners in $\mathcal P$. With $\E[\eta_\pi^2]\le K_w^2C_Y^4$ and $|\mathcal P|\le 2Nd_{\mathcal A}d_{\mathcal R}$, Lemma~\ref{lem:sparse} yields
+    \begin{equation*}
+        v - \tilde V = O_p\left(\frac{\sqrt{8N(d_{\mathcal A}d_{\mathcal R})^2K_w^2C_Y^4\cdot 2}}{N^2}\right) = O_p\left(\frac{d_{\mathcal A}d_{\mathcal R}K_wC_Y^2}{N^{3/2}}\right),
+    \end{equation*}
+    and dividing by $\tilde V = \var(\hat\tau_{EARL})\ge \delta/N$ (Assumption~A\ref{a:non-degeneracy}) gives
+    \begin{equation}\label{eq:v-ratio}
+        \frac{v}{\tilde V} - 1 = O_p\left(\frac{d^2_{\mathcal A}d_{\mathcal R}}{\sqrt N}\right)\cdot\frac{C_Y^2}{\delta\, q\,p(1-p)} = o_p(1),
+    \end{equation}
+    since $d^4_{\mathcal A}d^2_{\mathcal R}\le d^{10}_{\mathcal A}d^4_{\mathcal R} = o(N)$.
+
+    \emph{Step 3: finite $J$.} We show $\hat V_{RI}/v\stackrel{p}{\to}1$. Write $\hat V_{RI} = J^{-1}\sum_j W_j^2 - \bar W^2$ with $\bar W = J^{-1}\sum_jW_j$. Conditionally on $\mathcal G$, the variables $W_j^2$ are i.i.d.\ with mean $v$, so
+    \begin{equation*}
+        \var\left(\frac 1J\sum_{j=1}^JW_j^2\ \Big|\ \mathcal G\right) \le \frac{\E[W_1^4\mid\mathcal G]}{J},\qquad \E[\bar W^2\mid \mathcal G] = \frac vJ.
+    \end{equation*}
+    It remains to bound the conditional fourth moment. Let $V_a := \phi_a(\tilde{\mathbf S}_1,\,\tilde{\mathbf Z}_1)Y_a$, so that $W_1 = N^{-1}\sum_aV_a$, $\E[V_a\mid\mathcal G]=0$, and $|V_a|\le K_wC_Y$. Under Assumption~A\ref{a:1}, $V_a$ (as a function of the re-randomised indicators, with $Y_a$ fixed) is independent of $\{V_{a'}\colon a'\notin\mathcal T(a)\}$ jointly. Expand $\E[(\sum_aV_a)^4\mid\mathcal G]$ into the sum of $\E[V_aV_bV_cV_d\mid\mathcal G]$ over all quadruples of indices; any term in which one index lies outside the $\mathcal T$-neighbourhoods of the other three vanishes (that factor is independent of the rest and centred). The number of remaining terms is at most $3N^2\Delta^2 + cN\Delta^3 \le c'N^2\Delta^2$ with $\Delta := d_{\mathcal A}d_{\mathcal R}+1\le N$, for absolute constants $c,\,c'$ (choose an index and a neighbour of it, then another index and a neighbour of it, for terms splitting into two dependent pairs; the remaining connected configurations number at most $cN\Delta^3$). Hence
+    \begin{equation*}
+        \E[W_1^4\mid \mathcal G] \le \frac{c'N^2\Delta^2 (K_wC_Y)^4}{N^4} = \frac{c'\Delta^2K_w^4C_Y^4}{N^2},
+    \end{equation*}
+    and, by the conditional Chebyshev inequality,
+    \begin{equation*}
+        \hat V_{RI} - v = O_p\left(\frac{\Delta K_w^2C_Y^2}{N\sqrt J}\right) + O_p\left(\frac vJ\right).
+    \end{equation*}
+    Dividing by $v = \tilde V(1+o_p(1)) \ge (\delta/N)(1+o_p(1))$, the second term is $O_p(1/J) = o_p(1)$ and the first is
+    \begin{equation*}
+        O_p\left(\frac{\Delta K_w^2C_Y^2 }{\delta\sqrt J}\right) = O_p\left(\frac{d^3_{\mathcal A}d_{\mathcal R}}{\sqrt{J}}\right)\cdot\frac{C_Y^2}{\delta\,(q\,p(1-p))^2} = o_p(1),
+    \end{equation*}
+    by the assumption $d^6_{\mathcal A}d^2_{\mathcal R} = o(J_N)$. Combining with \eqref{eq:v-ratio},
+    \begin{equation*}
+        \frac{\hat V_{RI}}{\var(\hat\tau^{\phantom{1}}_{EARL})} = \frac{\hat V_{RI}}{v}\cdot\frac{v}{\tilde V}\stackrel{p}{\to}1.
+    \end{equation*}
+
+    \emph{Step 4: size of the test.} Under the null, $H_0^*$ implies Assumption~A\ref{a:4} (with all contributions constant) and $GATE=0$, so Theorem~\ref{th:asymptotic-normality} applies (its moment condition follows from boundedness), making $\hat\tau_{EARL}$ asymptotically standard normal after standardisation by the square root of its variance. Writing
+    \begin{equation*}
+        \frac{\hat\tau^{\phantom{1}}_{EARL}}{\sqrt{\hat V_{RI}}} = \frac{\hat\tau^{\phantom{1}}_{EARL}}{\sqrt{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}} \cdot \sqrt{\frac{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}{\hat V_{RI}}}
+    \end{equation*}
+    and applying Slutsky's theorem gives $\hat\tau_{EARL}/\sqrt{\hat V_{RI}}\stackrel{d}{\to}\mathcal N(0,\,1)$, whence
+    \begin{equation*}
+        \Pr\left\{\left|\hat\tau^{\phantom{1}}_{EARL}\right| > z_{1-\alpha/2}\sqrt{\hat V_{RI}}\right\}\to \alpha,
+    \end{equation*}
+    completing the proof.
+\end{proof}
 
 \end{document}

@@ -7,3 +7,5 @@ __pycache__/
 *.log
 *.out
 *.synctex.gz
+main.pdf
+main.log
