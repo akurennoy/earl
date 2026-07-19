@@ -435,7 +435,7 @@ The following theorem demonstrates that $\hat V$ is exactly unbiased and can be 
 
 \subsubsection{Randomisation Inference}\label{subsubsec:ri}
 
-An additional, computationally simpler variance estimator is available under a stronger null hypothesis (and if the outcome variables are bounded). Specifically, consider
+An additional, computationally simpler variance estimator is available under a stronger null hypothesis. Specifically, consider
 \begin{equation}\label{def:strong-null}
     H_0^*\colon\qquad e_a(\mathbf s,\,\mathbf z)\ \textup{does not depend on }(\mathbf s,\,\mathbf z),\quad \forall\,a\in\mathcal A.
 \end{equation}
@@ -462,7 +462,7 @@ Using the above notation, the randomisation-inference estimator of the variance 
 We complete our theoretical development with a theorem demonstrating that $\hat V_{RI}$ can be used for significance testing based on $\hat\tau^{\phantom{1}}_{EARL}$. As noted in Section~\ref{sec:literature}, the validity proof for the analogous full-assignment procedure in \cite{shi2025scalableanalysisbipartiteexperiments} was found to be flawed; the proof below (in Appendix~\ref{app:ri}) is self-contained and, we believe, of independent interest for the $q=1$ case as well.
 
 \begin{theorem}\label{th:randomisation-inference}
-    Let Assumptions A\ref{a:1}, A\ref{a:mu}, A\ref{a:no-autocorrelation}$^*$, and A\ref{a:non-degeneracy} hold, and suppose the outcomes are uniformly bounded: there exists $C_Y$ with $|Y_a|\le C_Y$ almost surely for all $a$ and $N$. Let the strong null \eqref{def:strong-null} hold true, let $d^{4}_{\mathcal{R}}d^{10}_{\mathcal{A}}=o(N)$, and let the number of re-randomisations $J=J_N$ grow so that $d^{6}_{\mathcal{A}}d^{2}_{\mathcal{R}}=o(J_N)$. Let $\hat V_{RI}$ be defined by \eqref{def:S-Z-samples}--\eqref{def:hatV}.
+    Let Assumptions A\ref{a:1}, A\ref{a:mu}, A\ref{a:no-autocorrelation}$^*$, and A\ref{a:non-degeneracy} hold, and suppose there exists $L>0$ such that $\E[Y_a^4] \le L$ for all $a\in\mathcal A$ (uniformly across all values of $N$). Let the strong null \eqref{def:strong-null} hold true, let $d^{4}_{\mathcal{R}}d^{10}_{\mathcal{A}}=o(N)$, and let the number of re-randomisations $J=J_N$ grow so that $d^{6}_{\mathcal{A}}d^{2}_{\mathcal{R}}=o(J_N)$. Let $\hat V_{RI}$ be defined by \eqref{def:S-Z-samples}--\eqref{def:hatV}.
 
     Then $\hat V_{RI} / \var(\hat\tau^{\phantom{1}}_{EARL})\stackrel{p}{\to} 1$ as $N\to\infty$, and
     for any $\alpha\in(0,\,1)$,
@@ -954,7 +954,7 @@ which vanishes for non-overlapping pairs.
 \subsection{Randomisation Inference}\label{app:ri}
 
 \begin{proof}[Proof of Theorem~\ref{th:randomisation-inference}]
-    Under the strong null \eqref{def:strong-null} write $e_a$ for the constant value of $e_a(\cdot,\,\cdot)$, so that $Y_a = e_a + \varepsilon_a$ with, by Assumption~A\ref{a:no-autocorrelation}$^*$, the errors jointly independent of each other and of $(\mathbf S,\,\mathbf Z)$; boundedness gives $|e_a|\le C_Y$ and $\E[\varepsilon_a^4]\le 16C_Y^4$. Denote $A_{a_1,a_2} := \E[\phi_{a_1}\phi_{a_2}]$, which by \eqref{eq:A12} vanishes unless $(a_1,\,a_2)\in\mathcal P$ and satisfies $|A_{a_1,a_2}|\le d_{\mathcal A}/(q\,p(1-p)) = K_w$ (cf.~\eqref{def:Kw}).
+    Under the strong null \eqref{def:strong-null} write $e_a$ for the constant value of $e_a(\cdot,\,\cdot)$, so that $Y_a = e_a + \varepsilon_a$ with, by Assumption~A\ref{a:no-autocorrelation}$^*$, the errors jointly independent of each other and of $(\mathbf S,\,\mathbf Z)$. We will repeatedly use the bound $\E[|Y_{a}Y_{b}Y_{c}Y_{d}|]\le L$, valid for any four (not necessarily distinct) analysis units by the generalised H\"older inequality and $\E[Y_a^4]\le L$; in particular, $\E[Y_{a_1}^2Y_{a_2}^2]\le L$. Denote $A_{a_1,a_2} := \E[\phi_{a_1}\phi_{a_2}]$, which by \eqref{eq:A12} vanishes unless $(a_1,\,a_2)\in\mathcal P$ and satisfies $|A_{a_1,a_2}|\le d_{\mathcal A}/(q\,p(1-p)) = K_w$ (cf.~\eqref{def:Kw}).
 
     \emph{Step 1: the target variance.} Under the null, $\E[\phi_aY_a] = e_a\E[\phi_a] = 0$, and for any $a_1,\,a_2$ (including $a_1=a_2$), using the independence of the errors from $(\mathbf S,\,\mathbf Z)$,
     \begin{eqnarray*}
@@ -973,38 +973,39 @@ which vanishes for non-overlapping pairs.
     \begin{equation*}
         v - \tilde V = \frac 1{N^2}\sum_{(a_1,a_2)\in\mathcal P}A_{a_1,a_2}\left(Y_{a_1}Y_{a_2} - \E[Y_{a_1}Y_{a_2}]\right).
     \end{equation*}
-    Under the null, $Y_{a_1}Y_{a_2}$ is a function of $(\varepsilon_{a_1},\,\varepsilon_{a_2})$ alone; by the joint independence of the errors, two terms $\eta_{(a_1,a_2)} = A_{a_1,a_2}Y_{a_1}Y_{a_2}$ and $\eta_{(a_3,a_4)}$ are independent unless $\{a_1,\,a_2\}\cap\{a_3,\,a_4\}\neq\emptyset$, which for a fixed pair leaves at most $\kappa = 4(d_{\mathcal A}d_{\mathcal R}+1)$ partners in $\mathcal P$. With $\E[\eta_\pi^2]\le K_w^2C_Y^4$ and $|\mathcal P|\le 2Nd_{\mathcal A}d_{\mathcal R}$, Lemma~\ref{lem:sparse} yields
+    Under the null, $Y_{a_1}Y_{a_2}$ is a function of $(\varepsilon_{a_1},\,\varepsilon_{a_2})$ alone; by the joint independence of the errors, two terms $\eta_{(a_1,a_2)} = A_{a_1,a_2}Y_{a_1}Y_{a_2}$ and $\eta_{(a_3,a_4)}$ are independent unless $\{a_1,\,a_2\}\cap\{a_3,\,a_4\}\neq\emptyset$, which for a fixed pair leaves at most $\kappa = 4(d_{\mathcal A}d_{\mathcal R}+1)$ partners in $\mathcal P$. With $\E[\eta_\pi^2]\le K_w^2\,\E[Y_{a_1}^2Y_{a_2}^2]\le K_w^2L$ and $|\mathcal P|\le 2Nd_{\mathcal A}d_{\mathcal R}$, Lemma~\ref{lem:sparse} yields
     \begin{equation*}
-        v - \tilde V = O_p\left(\frac{\sqrt{8N(d_{\mathcal A}d_{\mathcal R})^2K_w^2C_Y^4\cdot 2}}{N^2}\right) = O_p\left(\frac{d_{\mathcal A}d_{\mathcal R}K_wC_Y^2}{N^{3/2}}\right),
+        v - \tilde V = O_p\left(\frac{\sqrt{8N(d_{\mathcal A}d_{\mathcal R})^2K_w^2L\cdot 2}}{N^2}\right) = O_p\left(\frac{d_{\mathcal A}d_{\mathcal R}K_w\sqrt L}{N^{3/2}}\right),
     \end{equation*}
     and dividing by $\tilde V = \var(\hat\tau_{EARL})\ge \delta/N$ (Assumption~A\ref{a:non-degeneracy}) gives
     \begin{equation}\label{eq:v-ratio}
-        \frac{v}{\tilde V} - 1 = O_p\left(\frac{d^2_{\mathcal A}d_{\mathcal R}}{\sqrt N}\right)\cdot\frac{C_Y^2}{\delta\, q\,p(1-p)} = o_p(1),
+        \frac{v}{\tilde V} - 1 = O_p\left(\frac{d^2_{\mathcal A}d_{\mathcal R}}{\sqrt N}\right)\cdot\frac{\sqrt L}{\delta\, q\,p(1-p)} = o_p(1),
     \end{equation}
     since $d^4_{\mathcal A}d^2_{\mathcal R}\le d^{10}_{\mathcal A}d^4_{\mathcal R} = o(N)$.
 
     \emph{Step 3: finite $J$.} We show $\hat V_{RI}/v\stackrel{p}{\to}1$. Write $\hat V_{RI} = J^{-1}\sum_j W_j^2 - \bar W^2$ with $\bar W = J^{-1}\sum_jW_j$. Conditionally on $\mathcal G$, the variables $W_j^2$ are i.i.d.\ with mean $v$, so
-    \begin{equation*}
+    \begin{equation}\label{eq:cond-mc}
         \var\left(\frac 1J\sum_{j=1}^JW_j^2\ \Big|\ \mathcal G\right) \le \frac{\E[W_1^4\mid\mathcal G]}{J},\qquad \E[\bar W^2\mid \mathcal G] = \frac vJ.
-    \end{equation*}
-    It remains to bound the conditional fourth moment. Let $V_a := \phi_a(\tilde{\mathbf S}_1,\,\tilde{\mathbf Z}_1)Y_a$, so that $W_1 = N^{-1}\sum_aV_a$, $\E[V_a\mid\mathcal G]=0$, and $|V_a|\le K_wC_Y$. Under Assumption~A\ref{a:1}, $V_a$ (as a function of the re-randomised indicators, with $Y_a$ fixed) is independent of $\{V_{a'}\colon a'\notin\mathcal T(a)\}$ jointly. Expand $\E[(\sum_aV_a)^4\mid\mathcal G]$ into the sum of $\E[V_aV_bV_cV_d\mid\mathcal G]$ over all quadruples of indices; any term in which one index lies outside the $\mathcal T$-neighbourhoods of the other three vanishes (that factor is independent of the rest and centred). The number of remaining terms is at most $3N^2\Delta^2 + cN\Delta^3 \le c'N^2\Delta^2$ with $\Delta := d_{\mathcal A}d_{\mathcal R}+1\le N$, for absolute constants $c,\,c'$ (choose an index and a neighbour of it, then another index and a neighbour of it, for terms splitting into two dependent pairs; the remaining connected configurations number at most $cN\Delta^3$). Hence
+    \end{equation}
+    It remains to bound the fourth moment. Let $V_a := \phi_a(\tilde{\mathbf S}_1,\,\tilde{\mathbf Z}_1)Y_a$, so that $W_1 = N^{-1}\sum_aV_a$ and $\E[V_a\mid\mathcal G]=0$. Under Assumption~A\ref{a:1}, $\phi_a(\tilde{\mathbf S}_1,\,\tilde{\mathbf Z}_1)$ is independent of $\mathcal G$ and of $\{\phi_{a'}(\tilde{\mathbf S}_1,\,\tilde{\mathbf Z}_1)\colon a'\notin\mathcal T(a)\}$ jointly, and $|\phi_a(\tilde{\mathbf S}_1,\,\tilde{\mathbf Z}_1)|\le K_w$ by Lemma~\ref{lem:weight-bound}. Expand $\E[(\sum_aV_a)^4\mid\mathcal G]$ into the sum of $\E[V_aV_bV_cV_d\mid\mathcal G]$ over all quadruples of indices; any term in which one index lies outside the $\mathcal T$-neighbourhoods of the other three vanishes (its weight factor is independent of the rest and centred, while the outcomes are $\mathcal G$-measurable), and every remaining term is bounded by $K_w^4\,|Y_aY_bY_cY_d|$. The number of remaining terms is at most $3N^2\Delta^2 + cN\Delta^3 \le c'N^2\Delta^2$ with $\Delta := d_{\mathcal A}d_{\mathcal R}+1\le N$, for absolute constants $c,\,c'$ (choose an index and a neighbour of it, then another index and a neighbour of it, for terms splitting into two dependent pairs; the remaining connected configurations number at most $cN\Delta^3$). Taking expectations and using $\E[|Y_aY_bY_cY_d|]\le L$,
     \begin{equation*}
-        \E[W_1^4\mid \mathcal G] \le \frac{c'N^2\Delta^2 (K_wC_Y)^4}{N^4} = \frac{c'\Delta^2K_w^4C_Y^4}{N^2},
+        \E[W_1^4] = \E\bigl[\E[W_1^4\mid \mathcal G]\bigr] \le \frac{c'N^2\Delta^2 K_w^4L}{N^4} = \frac{c'\Delta^2K_w^4L}{N^2}.
     \end{equation*}
-    and, by the conditional Chebyshev inequality,
+    Taking expectations in \eqref{eq:cond-mc} and applying Chebyshev's and Markov's inequalities (unconditionally) then gives
     \begin{equation*}
-        \hat V_{RI} - v = O_p\left(\frac{\Delta K_w^2C_Y^2}{N\sqrt J}\right) + O_p\left(\frac vJ\right).
+        \frac 1J\sum_{j=1}^JW_j^2 - v = O_p\left(\frac{\Delta K_w^2\sqrt L}{N\sqrt J}\right),\qquad
+        \bar W^2 = O_p\left(\frac{\E[v]}{J}\right) = O_p\left(\frac{\tilde V}{J}\right).
     \end{equation*}
     Dividing by $v = \tilde V(1+o_p(1)) \ge (\delta/N)(1+o_p(1))$, the second term is $O_p(1/J) = o_p(1)$ and the first is
     \begin{equation*}
-        O_p\left(\frac{\Delta K_w^2C_Y^2 }{\delta\sqrt J}\right) = O_p\left(\frac{d^3_{\mathcal A}d_{\mathcal R}}{\sqrt{J}}\right)\cdot\frac{C_Y^2}{\delta\,(q\,p(1-p))^2} = o_p(1),
+        O_p\left(\frac{\Delta K_w^2\sqrt L }{\delta\sqrt J}\right) = O_p\left(\frac{d^3_{\mathcal A}d_{\mathcal R}}{\sqrt{J}}\right)\cdot\frac{\sqrt L}{\delta\,(q\,p(1-p))^2} = o_p(1),
     \end{equation*}
     by the assumption $d^6_{\mathcal A}d^2_{\mathcal R} = o(J_N)$. Combining with \eqref{eq:v-ratio},
     \begin{equation*}
         \frac{\hat V_{RI}}{\var(\hat\tau^{\phantom{1}}_{EARL})} = \frac{\hat V_{RI}}{v}\cdot\frac{v}{\tilde V}\stackrel{p}{\to}1.
     \end{equation*}
 
-    \emph{Step 4: size of the test.} Under the null, $H_0^*$ implies Assumption~A\ref{a:4} (with all contributions constant) and $GATE=0$, so Theorem~\ref{th:asymptotic-normality} applies (its moment condition follows from boundedness), making $\hat\tau_{EARL}$ asymptotically standard normal after standardisation by the square root of its variance. Writing
+    \emph{Step 4: size of the test.} Under the null, $H_0^*$ implies Assumption~A\ref{a:4} (with all contributions constant) and $GATE=0$, so Theorem~\ref{th:asymptotic-normality} applies (its moment condition $\E[Y_a^4]\le L$ holds by assumption), making $\hat\tau_{EARL}$ asymptotically standard normal after standardisation by the square root of its variance. Writing
     \begin{equation*}
         \frac{\hat\tau^{\phantom{1}}_{EARL}}{\sqrt{\hat V_{RI}}} = \frac{\hat\tau^{\phantom{1}}_{EARL}}{\sqrt{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}} \cdot \sqrt{\frac{\var\left(\hat\tau^{\phantom{1}}_{EARL}\right)}{\hat V_{RI}}}
     \end{equation*}
