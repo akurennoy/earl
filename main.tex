@@ -208,7 +208,7 @@ The example suggests that the bias of the reduced-graph estimator could be repai
 \begin{equation}\label{eq:class}
     \hat\tau_{c} = \frac 1 N \sum_{a\in \mathcal A} \sum_{r\in\mathcal{D}(a)}c(S_r)\,\frac{Z_r - p}{p(1-p)}\, Y_a,\qquad c\colon\{0,\,1\}\mapsto\R,
 \end{equation}
-which contains the reduced-graph ERL ($c(s)=s$), EARL ($c(s)=s/q$), and, e.g., the estimator with the standardised-allocation weight $c(s)=(s-q)/(q(1-q))$.
+which contains the reduced-graph ERL ($c(s)=s$), EARL ($c(s)=s/q$), and, e.g., the estimator with the standardised-allocation weight $c(s)=(s-q)/(q(1-q))$ (defined for $q<1$).
 
 \begin{proposition}\label{prop:optimality}
     Let Assumptions A\ref{a:1}, A\ref{a:mu}, and A\ref{a:no-autocorrelation} of Section~\ref{subsec:analysis} hold (the latter includes square integrability of the outcomes). Suppose, in addition, that the conditional second moments $m_a(\mathbf s,\,\mathbf z) := \E[Y_a^2\mid \mathbf S=\mathbf s,\,\mathbf Z=\mathbf z]$ exclude would-be assignments in the sense of Assumption~A\ref{a:mu}(ii): for every $a\in\mathcal A$, $m_a(\mathbf s,\,\mathbf z) = m_a(\mathbf s,\,\mathbf z')$ whenever $z_r=z_r'$ for all $r$ with $s_r=1$. Then:
