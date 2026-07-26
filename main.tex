@@ -211,7 +211,7 @@ The example suggests that the bias of the reduced-graph estimator could be repai
 which contains the reduced-graph ERL ($c(s)=s$), EARL ($c(s)=s/q$), and, e.g., the estimator with the standardised-allocation weight $c(s)=(s-q)/(q(1-q))$.
 
 \begin{proposition}\label{prop:optimality}
-    Let Assumptions A\ref{a:1}, A\ref{a:mu}, and A\ref{a:no-autocorrelation} of Section~\ref{subsec:analysis} hold and let the outcome variables be square integrable. Suppose, in addition, that the conditional second moments $m_a(\mathbf s,\,\mathbf z) := \E[Y_a^2\mid \mathbf S=\mathbf s,\,\mathbf Z=\mathbf z]$ exclude would-be assignments in the sense of Assumption~A\ref{a:mu}(ii): for every $a\in\mathcal A$, $m_a(\mathbf s,\,\mathbf z) = m_a(\mathbf s,\,\mathbf z')$ whenever $z_r=z_r'$ for all $r$ with $s_r=1$. Then:
+    Let Assumptions A\ref{a:1}, A\ref{a:mu}, and A\ref{a:no-autocorrelation} of Section~\ref{subsec:analysis} hold (the latter includes square integrability of the outcomes). Suppose, in addition, that the conditional second moments $m_a(\mathbf s,\,\mathbf z) := \E[Y_a^2\mid \mathbf S=\mathbf s,\,\mathbf Z=\mathbf z]$ exclude would-be assignments in the sense of Assumption~A\ref{a:mu}(ii): for every $a\in\mathcal A$, $m_a(\mathbf s,\,\mathbf z) = m_a(\mathbf s,\,\mathbf z')$ whenever $z_r=z_r'$ for all $r$ with $s_r=1$. Then:
     \begin{itemize}
         \item[\textup{(a)}] $\hat\tau_c$ satisfies $\E[\hat\tau_c]=\E[\hat\tau_{EARL}]$ for every outcome model satisfying the above if and only if $q\,c(1)=1$; in particular, under the conditions of Theorem~\ref{th:unbiasedness}(b) below, $\hat\tau_c$ is unbiased for GATE if and only if $q\,c(1)=1$;
         \item[\textup{(b)}] for every $c$ with $q\,c(1)=1$,
@@ -321,7 +321,7 @@ Part (a) quantifies the bias without any linearity assumption: the estimator's e
 
 The consistency result proven below (Theorem~\ref{th:consistency}) uses an extra assumption which states that, once we condition on the allocation and assignment of the randomisation units, no systematic co-movement remains between the outcomes of different analysis units: all cross-unit dependence is channelled through $(\mathbf S,\,\mathbf Z)$.
 
-\begin{assumption}\label{a:no-autocorrelation} Conditional on $(\mathbf S,\,\mathbf Z)$, the errors
+\begin{assumption}\label{a:no-autocorrelation} The outcome variables $Y_a$, $a\in\mathcal A$, are square integrable (which makes the conditional moments below well defined) and, conditional on $(\mathbf S,\,\mathbf Z)$, the errors
 \begin{equation}\label{def:epsa}
     \varepsilon_a = Y_a - e_a(\mathbf{S},\,\mathbf{Z}),\qquad a\in\mathcal{A},
 \end{equation}
@@ -348,11 +348,13 @@ In this section, we prove the asymptotic normality of the EARL estimator and dev
 
 \subsubsection{Asymptotic Normality}
 
-To prove asymptotic normality we replace Assumption A\ref{a:no-autocorrelation} with a stronger condition, requiring that the errors $\varepsilon_a$, $a\in\mathcal A$, defined in \eqref{def:epsa} are independent across observations and from the allocation and assignment indicators.
+To prove asymptotic normality we strengthen the decorrelation requirement of Assumption A\ref{a:no-autocorrelation}, asking that the errors $\varepsilon_a$, $a\in\mathcal A$, defined in \eqref{def:epsa} be independent across observations and from the allocation and assignment indicators.
 
 \begin{assumptionstar}{A\ref{a:no-autocorrelation}$^*$}
 The errors $\{\varepsilon_a\}_{a\in\mathcal A}$, allocation indicators $\mathbf S$, and assignment indicators $\mathbf Z$ are jointly independent.
 \end{assumptionstar}
+
+Under A\ref{a:no-autocorrelation}$^*$, the products $\varepsilon_a\varepsilon_{a'}$ are automatically integrable ($\E[|\varepsilon_a\varepsilon_{a'}|] = \E[|\varepsilon_a|]\,\E[|\varepsilon_{a'}|]$), so the conditional uncorrelatedness required by Assumption~A\ref{a:no-autocorrelation} holds for merely integrable outcomes; since every result below that invokes A\ref{a:no-autocorrelation}$^*$ also bounds the fourth moments of the outcomes, Assumption~A\ref{a:no-autocorrelation} holds in full in all those settings.
 
 The proof of asymptotic normality also relies on the following (and last) assumption of this subsection. It rules out practically irrelevant edge cases in which the GATE can be estimated at a faster than parametric rate. See the discussion in \cite[p.~475]{harshaw2023erl} for specific scenarios that are excluded by this condition.
 
@@ -680,11 +682,11 @@ which implies that the average expected outcome $\mu$ defined in \eqref{eq:mu} i
 We begin with a lemma that is used in the proof of Proposition~\ref{prop:optimality} below and in several later proofs; note that its two parts require different subsets of the assumptions.
 
 \begin{lemma}\label{lem:cov=0}
-    Let the random variables $S_r,\,Z_r\colon\Omega\mapsto\{0,\,1\}$, $r=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}, and suppose the outcome variables $Y_a$, $a\in\mathcal{A}$, are square integrable.
+    Let the random variables $S_r,\,Z_r\colon\Omega\mapsto\{0,\,1\}$, $r=1,\,\ldots,\,M$, satisfy Assumption A\ref{a:1}.
 
     Then
     \begin{itemize}
-        \item[\textup{(a)}] if Assumption~A\ref{a:no-autocorrelation} holds true, then
+        \item[\textup{(a)}] if Assumption~A\ref{a:no-autocorrelation} holds true (in particular, the outcome variables are square integrable), then
             $\E[Y_{a_1}Y_{a_2}\mid \mathbf{S},\,\mathbf{Z}] = e_{a_1}(\mathbf{S},\,\mathbf{Z})\,e_{a_2}(\mathbf{S},\,\mathbf{Z})$ for all $a_1\neq a_2\in\mathcal A$;
         \item[\textup{(b)}] if, in addition, Assumptions~A\ref{a:mu} and A\ref{a:4} hold true, then for any two analysis units $a_1,\,a_2\in\mathcal{A}$ such that $\mathcal D(a_1)\cap \mathcal D(a_2) = \emptyset$ it holds that
         \begin{equation}\label{eq:cov=0}
