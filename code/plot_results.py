@@ -13,12 +13,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 GRAPHS = [("synthetic", "Synthetic"), ("amazon", "Amazon"), ("movielens", "MovieLens")]
+# distinct linestyle + marker per estimator so the lines stay readable in
+# black-and-white print and for colour-blind readers
 STYLE = {
-    "EARL": dict(color="#0072B2", marker="o", zorder=5),
-    "EARL-centred": dict(color="#56B4E9", marker="s"),
-    "ERL-drop": dict(color="#D55E00", marker="^"),
-    "IPW-assign": dict(color="#009E73", marker="D"),
-    "IPW-alloc": dict(color="#CC79A7", marker="v"),
+    "EARL": dict(color="#0072B2", marker="o", ls="-", zorder=5),
+    "EARL-centred": dict(color="#56B4E9", marker="s", ls=(0, (4, 1.5)), markerfacecolor="none"),
+    "ERL-drop": dict(color="#D55E00", marker="^", ls="-."),
+    "IPW-assign": dict(color="#009E73", marker="D", ls=(0, (5, 1.5, 1, 1.5)), markerfacecolor="none"),
+    "IPW-alloc": dict(color="#CC79A7", marker="v", ls=(0, (2, 1))),
 }
 
 
@@ -40,7 +42,7 @@ def main():
         "axes.labelsize": 9,
         "legend.fontsize": 8.5,
         "lines.linewidth": 1.4,
-        "lines.markersize": 3.6,
+        "lines.markersize": 4.2,
     })
     fig, axes = plt.subplots(2, 3, figsize=(10.2, 4.4), sharex=True, layout="constrained")
 
