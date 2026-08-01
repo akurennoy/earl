@@ -1,0 +1,142 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper,margin=2.8cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\var}{\operatorname{Var}}
+\newcommand{\cov}{\operatorname{Cov}}
+\newcommand{\ind}{\perp\!\!\!\perp}
+
+\title{Additional Notes on EARL:\\ the Collapsed-Probability ERL Estimator and Excluded Randomisation Units}
+\author{Alexey Kurennoy}
+\date{29 July 2026}
+
+\begin{document}
+\maketitle
+
+\noindent These notes complement the manuscript \emph{``EARL: Exposure- and Allocation-Reweighted Linear Estimator for Bipartite Experiments with Partial Assignment''} (the ``manuscript''). Notation follows the manuscript: $\mathcal A$ and $\mathcal R$ are the populations of $N$ analysis and $M$ randomisation units, $\mathcal D(a) \subseteq \mathcal R$ the connections of analysis unit $a$, $S_r \sim \mathrm{Bernoulli}(q)$ the allocation indicators, $Z_r \sim \mathrm{Bernoulli}(p)$ the assignment indicators, all mutually independent, $q, p \in (0,1)$ known. Throughout we work under the edgewise additive conditional-mean model (the natural strengthening of Assumption~A4 of the manuscript under which contributions are attached to individual connections):
+\begin{equation}\label{eq:model}
+\E[Y_a \mid \mathbf S, \mathbf Z]
+= \alpha_a + \sum_{r\in\mathcal D(a)} \Big[ S_r Z_r\, t_{ar} + S_r(1-Z_r)\, c_{ar} + (1-S_r)\, u_{ar} \Big],
+\qquad a \in \mathcal A,
+\end{equation}
+with square-integrable outcomes. Under \eqref{eq:model}, $GATE = \frac1N\sum_a \sum_{r\in\mathcal D(a)}(t_{ar}-c_{ar})$, and the EARL estimator is
+\[
+\hat\tau_{EARL} = \frac 1N \sum_{a\in\mathcal A}\sum_{r\in\mathcal D(a)} w_r\, Y_a,
+\qquad
+w_r = \frac{S_r}{q}\cdot\frac{Z_r-p}{p(1-p)} .
+\]
+
+\section{Collapsed-probability ERL: bias and efficiency}\label{sec:note1}
+
+Since $T_r = S_r Z_r \sim \mathrm{Bernoulli}(qp)$ i.i.d., one may ignore the two-stage structure of the design altogether and apply the standard ERL estimator with $T_r$ as the treatment indicator and $qp$ as the (collapsed) treatment probability:
+\begin{equation}\label{eq:collapsed}
+\hat\tau_{C} = \frac 1N \sum_{a\in\mathcal A}\sum_{r\in\mathcal D(a)} v_r\, Y_a,
+\qquad
+v_r = \frac{T_r - qp}{qp(1-qp)} .
+\end{equation}
+
+\begin{proposition}[bias]\label{prop:c-bias}
+Under \eqref{eq:model},
+\[
+\E[\hat\tau_{C}] = GATE + \frac{1-q}{1-qp}\cdot\frac 1N \sum_{a\in\mathcal A}\sum_{r\in\mathcal D(a)} \big(c_{ar} - u_{ar}\big).
+\]
+In particular, $\hat\tau_C$ is unbiased if and only if the aggregate contribution of unassigned connections equals that of control connections, e.g.\ when $u_{ar} = c_{ar}$ for every edge.
+\end{proposition}
+
+\begin{proof}
+Per edge, $\E[v_r S_rZ_r] = 1$, $\E[v_r S_r(1-Z_r)] = -\,q(1-p)/(1-qp)$, and $\E[v_r(1-S_r)] = -(1-q)/(1-qp)$ (direct computation from $T_r \sim \mathrm{Bernoulli}(qp)$). Summing against \eqref{eq:model} and using $\tfrac{q(1-p)}{1-qp} + \tfrac{1-q}{1-qp} = 1$ gives the display.
+\end{proof}
+
+When the unassigned experience does coincide with control, $\hat\tau_C$ is not merely unbiased~--- it is \emph{more efficient} than EARL. The key structural observation is that under $u_{ar} = c_{ar}$ the conditional mean \eqref{eq:model} depends on the design only through the collapsed vector $\mathbf T = (T_1,\ldots,T_M)$; the efficiency claim additionally requires the second-moment analogue of this exclusion, exactly parallel to the second-moment condition in Proposition~3.1 of the manuscript.
+
+\begin{proposition}[efficiency]\label{prop:c-efficiency}
+Assume \eqref{eq:model} with $u_{ar} = c_{ar}$ for all $(a,r)$, and assume the conditional second moments depend on the design only through $\mathbf T$:
+\begin{equation}\label{eq:2m}
+\E[Y_a Y_{a'} \mid \mathbf S, \mathbf Z] = m_{aa'}(\mathbf T) \qquad \text{for all } a, a' \in \mathcal A
+\end{equation}
+(satisfied, e.g., when $Y_a = \E[Y_a\mid\mathbf S,\mathbf Z] + \eta_a$ with noise $(\eta_a)_{a}$ independent of $(\mathbf S, \mathbf Z)$). Then both estimators are unbiased for $GATE$ and
+\[
+\var(\hat\tau_{EARL}) - \var(\hat\tau_{C})
+= \frac{1-q}{q(1-p)(1-qp)^2}\cdot \frac{1}{N^2}\sum_{r\in\mathcal R} \E\big[(1-T_r)\,\bar Y_r^{\,2}\big] \;\ge\; 0,
+\qquad
+\bar Y_r = \sum_{a:\, r\in\mathcal D(a)} Y_a .
+\]
+The inequality is strict unless $(1-T_r)\bar Y_r = 0$ almost surely for every $r$.
+\end{proposition}
+
+\begin{proof}
+Define, per randomisation unit,
+\[
+\delta_r = \frac{1-S_r}{1-q} - \frac{S_r(1-Z_r)}{q(1-p)},
+\qquad
+\kappa = \frac{1-q}{1-qp}.
+\]
+\emph{Step 1 (weight identity).} On the three atoms $(S_r,Z_r) \in \{(1,1),(1,0),(0,\cdot)\}$ the weights take the values
+\[
+w_r:\ \tfrac{1}{qp},\ -\tfrac{1}{q(1-p)},\ 0;
+\qquad
+v_r:\ \tfrac{1}{qp},\ -\tfrac{1}{1-qp},\ -\tfrac{1}{1-qp};
+\qquad
+\delta_r:\ 0,\ -\tfrac{1}{q(1-p)},\ \tfrac{1}{1-q},
+\]
+and one checks atom by atom that $w_r - v_r = \kappa\,\delta_r$. Hence, with $D = \frac1N\sum_{r}\delta_r \bar Y_r$,
+\[
+\hat\tau_{EARL} = \hat\tau_{C} + \kappa\, D .
+\]
+\emph{Step 2 (ancillarity of $\delta$).} $\delta_r$ vanishes on $\{T_r=1\}$, and on $\{T_r=0\}$ the conditional distribution of $(S_r,Z_r)$ puts mass $\tfrac{q(1-p)}{1-qp}$ on $(1,0)$ and $\tfrac{1-q}{1-qp}$ on $\{S_r=0\}$, whence $\E[\delta_r\mid T_r] = 0$; by independence across units, $\E[\delta_r \mid \mathbf T] = 0$, and for $r \neq r'$, $\E[\delta_r\delta_{r'}\mid \mathbf T] = 0$. Moreover
+$\E[\delta_r^2 \mid \mathbf T] = \tfrac{1-T_r}{q(1-p)(1-q)}$.
+
+\emph{Step 3 (orthogonality).} $v_r$ is a function of $\mathbf T$; under $u=c$ and \eqref{eq:2m} all relevant conditional moments of the outcomes are functions of $\mathbf T$. By the tower property, $\E[D] = 0$,
+\[
+\cov(\hat\tau_C,\, D) = \frac{1}{N^2}\sum_{a,a'}\sum_{r\in\mathcal D(a)}\sum_{r'} \E\big[v_r\, m_{aa'}(\mathbf T)\, \E[\delta_{r'}\mid\mathbf T]\big] = 0,
+\]
+and $\var(D) = \E[D^2] = \frac{1}{N^2}\sum_r \E\big[\E[\delta_r^2\mid\mathbf T]\, \E[\bar Y_r^2\mid \mathbf S,\mathbf Z\,]\big] = \frac{1}{N^2}\sum_r \frac{\E[(1-T_r)\bar Y_r^2]}{q(1-p)(1-q)}$.
+
+\emph{Step 4.} $\var(\hat\tau_{EARL}) = \var(\hat\tau_C) + \kappa^2\var(D)$, and $\kappa^2 / \big(q(1-p)(1-q)\big) = \tfrac{1-q}{q(1-p)(1-qp)^2}$.
+\end{proof}
+
+\begin{remark}
+The decomposition isolates the price of EARL's robustness. When unassigned and control experiences coincide, the design information in $(S_r, Z_r)$ beyond $T_r$ is ancillary: the outcome law depends on the design only through $\mathbf T$, and $\delta_r$ is exactly the leftover design noise. EARL's weights load on this noise (that is what makes them insensitive to $u_{ar} \neq c_{ar}$), while the collapsed weights $v_r$ do not; the variance gap is the corresponding premium, and Proposition~\ref{prop:c-bias} is what the premium buys. Note also that $\hat\tau_C$ requires the would-be assignments $Z_r$ of unassigned units to be immaterial in a stronger, exact sense: it treats $S_r = 0$ and $(S_r,Z_r)=(1,0)$ identically, which is precisely why its unbiasedness hinges on $u = c$.
+\end{remark}
+
+\begin{remark}
+All statements were additionally verified by exhaustive enumeration of the design sample space in exact rational arithmetic (including the closed-form variance gap on a graph with a shared randomisation unit and heterogeneous coefficients).
+\end{remark}
+
+\section{Randomisation units excluded from both the test and the rollout}\label{sec:note2}
+
+Suppose a group $\mathcal R_0 \subset \mathcal R$ is excluded from the experiment~--- deterministically, $S_r \equiv 0$ for $r\in\mathcal R_0$~--- \emph{and} from the contemplated rollout, so the decision-relevant estimand contrasts full treatment versus full control of the \emph{active} units $\mathcal R_1 = \mathcal R\setminus\mathcal R_0$ only, with $\mathcal R_0$ held at its status quo in both arms:
+\[
+GATE_{\mathcal R_1} = \frac 1N\sum_{a\in\mathcal A}\Big[
+\mu_a\big(\text{all of }\mathcal R_1\text{ treated};\ \mathcal R_0\text{ status quo}\big)
+- \mu_a\big(\text{all of }\mathcal R_1\text{ control};\ \mathcal R_0\text{ status quo}\big)\Big].
+\]
+Assume the additive model \eqref{eq:model} holds for the full population with the convention that each connection's contribution depends on \emph{its own} unit's state only; for $r \in \mathcal R_0$ the state is deterministic, so the contribution reduces to a constant $g_{ar}$. This per-connection separability is the ``no interference between $\mathcal R_0$ and the other randomisation units'' condition: the excluded units neither transmit nor receive the treatment states of other units.
+
+\begin{proposition}\label{prop:excluded}
+Under the above assumptions:
+\begin{enumerate}
+\item[(i)] $GATE_{\mathcal R_1} = \frac 1N\sum_a \sum_{r\in\mathcal D(a)\cap \mathcal R_1}(t_{ar}-c_{ar})$: the aggregate status-quo contribution $\frac1N\sum_a\sum_{r\in\mathcal D(a)\cap\mathcal R_0} g_{ar}$ enters both counterfactual arms and cancels.
+\item[(ii)] The reduced problem with connection sets $\widetilde{\mathcal D}(a) = \mathcal D(a)\cap\mathcal R_1$ and intercepts $\tilde\alpha_a = \alpha_a + \sum_{r\in\mathcal D(a)\cap\mathcal R_0} g_{ar}$ satisfies model \eqref{eq:model} verbatim, and EARL computed on the reduced experiment graph is unbiased for $GATE_{\mathcal R_1}$. In this precise sense the excluded units can be ignored.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}
+(i) is immediate from evaluating \eqref{eq:model} at the two arms: the $\mathcal R_0$ terms are the same constants in both. For (ii), absorbing the constants into the intercept exhibits the reduced problem as an instance of the manuscript's setting on the graph $\widetilde{\mathcal D}$; EARL's weights satisfy $\E[w_r] = 0$, so the intercept (hence the absorbed $\mathcal R_0$ contribution) drops out of the expectation, and the manuscript's unbiasedness theorem applies.
+\end{proof}
+
+\begin{remark}[the estimand changes]
+$GATE_{\mathcal R_1}$ is not the full-population $GATE$: it is the effect of rolling out to the active units only. Ignoring $\mathcal R_0$ is justified here precisely because $\mathcal R_0$ is excluded from the rollout as well as from the test; if $\mathcal R_0$ would eventually be treated, the reduced-graph analysis estimates the wrong contrast.
+\end{remark}
+
+\begin{remark}[direction of interference]
+Only interference \emph{from} the active units \emph{to} the excluded ones is dangerous. Dependence of active units' contributions on the (fixed) status quo of $\mathcal R_0$ is constant across the experiment and both counterfactual arms, and is silently absorbed into $t_{ar}, c_{ar}$. By contrast, if an excluded unit's contribution responds to the treatment state of active units~--- e.g.\ through equilibrium coupling of prices~--- the cancellation in (i) fails and the reduced-graph analysis is biased. A minimal example: one analysis unit, two active units, one excluded unit whose contribution is $\gamma\, S_1Z_1S_2Z_2$ (it reacts when both active connections are treated). Then $GATE_{\mathcal R_1}$ gains the term $\gamma$, while the reduced-graph EARL has expectation $\sum(t-c) + 2qp\,\gamma$, i.e.\ bias $(2qp-1)\gamma$~--- verified exactly. Equivalently: interference from active to excluded units manifests as a non-additive (interaction) term in the active units' states, taking the problem outside model \eqref{eq:model}.
+\end{remark}
+
+\end{document}
