@@ -15,17 +15,6 @@ def earl(B, deg, S, Z, Y, p, q):
     return np.mean(w * Y, axis=0)
 
 
-def earl_centred(B, deg, S, Z, Y, p, q):
-    """Variant with the product of standardised allocation coverage and
-    standardised exposure as the weight; requires would-be assignments of
-    unallocated units. Coincides with ERL on the full graph at q=1."""
-    wH = (B @ (Z - p)) / (p * (1.0 - p))
-    if q >= 1.0:
-        return np.mean(wH * Y, axis=0)
-    wG = (B @ (S - q)) / (q * (1.0 - q))
-    return np.mean(wG * wH * Y, axis=0)
-
-
 def erl_drop(B, deg, S, Z, Y, p, q):
     """Standard ERL on the reduced graph: unallocated units are dropped."""
     w = (B @ (S * (Z - p))) / (p * (1.0 - p))
@@ -58,7 +47,6 @@ def ipw_allocation_aware(B, deg, S, Z, Y, p, q):
 
 ESTIMATORS = {
     "EARL": earl,
-    "EARL-centred": earl_centred,
     "ERL-drop": erl_drop,
     "IPW-assign": ipw_participating,
     "IPW-alloc": ipw_allocation_aware,

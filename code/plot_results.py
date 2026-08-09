@@ -17,7 +17,6 @@ GRAPHS = [("synthetic", "Synthetic"), ("amazon", "Amazon"), ("movielens", "Movie
 # black-and-white print and for colour-blind readers
 STYLE = {
     "EARL": dict(color="#0072B2", marker="o", ls="-", zorder=5),
-    "EARL-centred": dict(color="#56B4E9", marker="s", ls=(0, (4, 1.5)), markerfacecolor="none"),
     "ERL-drop": dict(color="#D55E00", marker="^", ls="-."),
     "IPW-assign": dict(color="#009E73", marker="D", ls=(0, (5, 1.5, 1, 1.5)), markerfacecolor="none"),
     "IPW-alloc": dict(color="#CC79A7", marker="v", ls=(0, (2, 1))),
@@ -48,15 +47,11 @@ def main():
 
     for j, (gkey, gtitle) in enumerate(GRAPHS):
         sub = df[df.graph == gkey]
-        gate = sub.gate.iloc[0]
         ax_r, ax_b = axes[0, j], axes[1, j]
         for ename, style in STYLE.items():
             e = sub[sub.estimator == ename].sort_values("q")
             ax_r.plot(e.q, e.rmse, label=ename, **style)
             ax_b.plot(e.q, e.bias, label=ename, **style)
-        qs = sorted(sub.q.unique())
-        ax_b.plot(qs, [-(1 - q) * gate for q in qs], ls=":", color="black",
-                  label=r"$-(1-q)\,GATE$", zorder=1)
         ax_b.axhline(0.0, color="black", lw=0.6, alpha=0.5)
         ax_r.set_yscale("log")
         ax_r.set_title(gtitle)
@@ -69,7 +64,7 @@ def main():
             ax.set_xlim(0.05, 1.05)
 
     handles, labels = axes[1, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="outside lower center", ncols=6, frameon=False)
+    fig.legend(handles, labels, loc="outside lower center", ncols=4, frameon=False)
     out = os.path.join(args.out, "fig_rmse_bias.pdf")
     fig.savefig(out)
     print(f"wrote {out}")

@@ -11,9 +11,8 @@ Assignment*.
   He & McAuley (2016), and the MovieLens-100K user–movie graph.
 - `dgp.py` — semi-synthetic outcome models (scenarios S1–S3 with an optional
   effect of unallocated units, e.g. from a concurrent experiment).
-- `estimators.py` — EARL, its centred-weight variant, ERL on the reduced
-  graph, two Horvitz–Thompson (IPW) benchmarks, and the
-  randomisation-inference variance estimator.
+- `estimators.py` — EARL, ERL on the reduced graph, two Horvitz–Thompson
+  (IPW) benchmarks, and the randomisation-inference variance estimator.
 - `run_simulations.py` — runs the full study and writes `results/rmse.csv`
   and `results/ri_size.csv`.
 - `plot_results.py` — produces the figures used in the paper.
